@@ -1,0 +1,263 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --energy-green: #22c55e;
+  --energy-lime: #84cc16;
+  --energy-cyan: #22d3ee;
+  --energy-sky: #38bdf8;
+  --bg-deep: #022c22;
+  --bg-soft: #052e2b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: #e8fff1;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(34, 211, 238, 0.2), transparent 40%),
+    radial-gradient(circle at 80% 10%, rgba(34, 197, 94, 0.28), transparent 45%),
+    radial-gradient(circle at 50% 100%, rgba(132, 204, 22, 0.2), transparent 40%),
+    var(--bg-deep);
+  font-family: var(--font-body), 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.fire-background {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+}
+
+.fire-wave {
+  position: absolute;
+  width: 160%;
+  height: 55%;
+  left: -30%;
+  bottom: -18%;
+  filter: blur(35px);
+  opacity: 0.5;
+  animation: drift 9s ease-in-out infinite alternate;
+  background: linear-gradient(135deg, var(--energy-green), var(--energy-cyan), var(--energy-lime));
+}
+
+.fire-wave.second {
+  bottom: -26%;
+  opacity: 0.3;
+  animation-duration: 12s;
+  animation-direction: alternate-reverse;
+}
+
+.ember {
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(204, 255, 225, 0.9);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.9);
+  animation: rise linear infinite;
+}
+
+.fire-shell {
+  background: rgba(3, 35, 28, 0.72);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  box-shadow:
+    0 0 0 1px rgba(132, 204, 22, 0.2) inset,
+    0 0 26px rgba(34, 211, 238, 0.25);
+  backdrop-filter: blur(8px);
+}
+
+.molten-title {
+  font-family: var(--font-body), sans-serif;
+  font-weight: 800;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #eafff4 0%, #86efac 45%, #22d3ee 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 18px rgba(34, 211, 238, 0.45);
+}
+
+.notice-board {
+  border: 1px solid rgba(34, 211, 238, 0.5);
+  background: linear-gradient(155deg, rgba(9, 61, 52, 0.86), rgba(5, 46, 43, 0.92));
+  box-shadow: 0 0 22px rgba(34, 211, 238, 0.2);
+}
+
+.notice-item {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(2, 44, 34, 0.65);
+}
+
+.notice-success {
+  border-color: rgba(132, 204, 22, 0.7);
+}
+
+.notice-warn {
+  border-color: rgba(251, 191, 36, 0.7);
+}
+
+.notice-info {
+  border-color: rgba(56, 189, 248, 0.7);
+}
+
+.status-pill {
+  border-radius: 6px;
+  border: 1px solid rgba(34, 211, 238, 0.5);
+  background: rgba(8, 52, 44, 0.72);
+  color: #a7f3d0;
+}
+
+.fire-card {
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  background: linear-gradient(160deg, rgba(12, 54, 43, 0.92), rgba(5, 35, 31, 0.95));
+  box-shadow: 0 10px 26px rgba(34, 211, 238, 0.16);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.fire-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(132, 204, 22, 0.75);
+  box-shadow: 0 0 25px rgba(34, 211, 238, 0.35);
+}
+
+.module-tile {
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  background:
+    radial-gradient(circle at 70% 10%, rgba(34, 211, 238, 0.14), transparent 45%),
+    radial-gradient(circle at 30% 90%, rgba(132, 204, 22, 0.16), transparent 50%),
+    linear-gradient(145deg, rgba(6, 53, 48, 0.95), rgba(4, 36, 33, 0.95));
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.08), 0 12px 20px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.module-tile:hover {
+  transform: translateY(-3px);
+  border-color: rgba(132, 204, 22, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(132, 204, 22, 0.24), 0 0 24px rgba(34, 211, 238, 0.22);
+}
+
+.module-icon {
+  border-radius: 12px;
+  border: 1px solid rgba(34, 211, 238, 0.7);
+  background: rgba(2, 44, 34, 0.85);
+  box-shadow: 0 0 15px rgba(34, 211, 238, 0.25);
+  font-size: 24px;
+}
+
+.energy-button {
+  border-radius: 4px;
+  border: 1px solid rgba(167, 243, 208, 0.8);
+  background: linear-gradient(135deg, var(--energy-green), var(--energy-cyan), var(--energy-lime));
+  color: #052e2b;
+  font-weight: 800;
+  box-shadow: 0 0 15px rgba(34, 211, 238, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.energy-button:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 0 24px rgba(132, 204, 22, 0.5);
+  animation: rumble 0.22s linear;
+}
+
+.energy-button:active {
+  transform: scale(0.98);
+}
+
+.fire-input {
+  border-radius: 4px;
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  background: rgba(3, 35, 28, 0.85);
+  color: #dcfce7;
+}
+
+.fire-input:focus {
+  outline: none;
+  border-color: #84cc16;
+  box-shadow: 0 0 0 2px rgba(132, 204, 22, 0.22);
+}
+
+.mission-row,
+.team-mission-card,
+.boss-check,
+.quiz-panel,
+.quiz-option {
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  background: rgba(3, 35, 28, 0.75);
+}
+
+.quiz-option {
+  color: #d9ffe9;
+}
+
+.quiz-option:hover {
+  border-color: rgba(132, 204, 22, 0.65);
+}
+
+.quiz-option-active {
+  border-color: rgba(132, 204, 22, 0.95);
+  box-shadow: 0 0 15px rgba(132, 204, 22, 0.32);
+}
+
+.boss-check input {
+  accent-color: #84cc16;
+}
+
+.growth-bar {
+  background: linear-gradient(90deg, #22c55e, #22d3ee, #84cc16);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.35);
+}
+
+@keyframes drift {
+  from {
+    transform: translateX(-2%) translateY(0) scale(1);
+  }
+  to {
+    transform: translateX(3%) translateY(-2%) scale(1.06);
+  }
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(10vh) scale(0.7);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-110vh) scale(1.2);
+    opacity: 0;
+  }
+}
+
+@keyframes rumble {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-1px);
+  }
+  50% {
+    transform: translateX(1px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .fire-wave {
+    filter: blur(24px);
+    opacity: 0.35;
+  }
+
+  .module-tile {
+    padding: 1.2rem;
+  }
+}
