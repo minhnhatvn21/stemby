@@ -22,12 +22,15 @@ import {
 type KnowledgeCard = { id: number; text: string; icon: string };
 type ChallengeCard = { id: number; question: string; answer: string[]; correct: string };
 type Mission = { id: number; title: string; reward: number; note: string };
+type AIQuizLevel = 'de' | 'trung_binh' | 'kho' | 'cuc_kho';
 type AIQuizQuestion = {
   question: string;
   options: string[];
   correctIndex: number;
   explanation: string;
 };
+type Notice = { id: number; title: string; message: string; type: 'success' | 'warn' | 'info' };
+type DailyQuizState = { date: string; levelsUsed: Record<AIQuizLevel, boolean>; streak: number };
 
 const avatars = ['🦸', '🌱', '⚡', '🌍', '💧', '☀️'];
 
@@ -60,10 +63,10 @@ const personalMissions: Mission[] = [
 ];
 
 const growthMilestones = [
-  { min: 0, rank: 'Mầm Lửa', color: 'text-orange-200' },
-  { min: 50, rank: 'Chiến Binh Xanh', color: 'text-yellow-300' },
-  { min: 120, rank: 'Thủ Lĩnh Năng Lượng', color: 'text-amber-300' },
-  { min: 220, rank: 'Huyền Thoại Plasma', color: 'text-cyan-300' }
+  { min: 0, rank: 'Mầm Xanh', color: 'text-emerald-200' },
+  { min: 60, rank: 'Chiến Binh Năng Lượng', color: 'text-lime-300' },
+  { min: 140, rank: 'Thủ Lĩnh Sinh Thái', color: 'text-cyan-300' },
+  { min: 260, rank: 'Huyền Thoại Năng Lượng Xanh', color: 'text-sky-300' }
 ];
 
 const spinRewards = [
@@ -72,6 +75,31 @@ const spinRewards = [
   { text: '+30 điểm năng lượng', value: 30 },
   { text: 'Không trúng, thử lại lần sau', value: 0 }
 ];
+
+const baseRewardByLevel: Record<AIQuizLevel, number> = {
+  de: 6,
+  trung_binh: 8,
+  kho: 10,
+  cuc_kho: 14
+};
+
+const penaltyByLevel: Record<AIQuizLevel, number> = {
+  de: 0,
+  trung_binh: 0,
+  kho: -5,
+  cuc_kho: -8
+};
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function levelLabel(level: AIQuizLevel) {
+  if (level === 'de') return 'Dễ';
+  if (level === 'trung_binh') return 'Trung bình';
+  if (level === 'kho') return 'Khó';
+  return 'Cực khó';
+}
 
 export default function HomePage() {
   const [nickname, setNickname] = useState('');
@@ -88,10 +116,12 @@ export default function HomePage() {
   const [thanCay, setThanCay] = useState('');
   const [tanCay, setTanCay] = useState('');
   const [missionStatus, setMissionStatus] = useState<Record<number, boolean>>({});
+
+  const [notices, setNotices] = useState<Notice[]>([]);
   const [teamMissionMessage, setTeamMissionMessage] = useState('');
 
-  const [quizTopic, setQuizTopic] = useState('Tiết kiệm điện trong gia đình');
-  const [quizLevel, setQuizLevel] = useState<'de' | 'trung_binh' | 'kho'>('de');
+  const [quizTopic, setQuizTopic] = useState('Năng lượng xanh ở trường học với Doraemon và Nobita');
+  const [quizLevel, setQuizLevel] = useState<AIQuizLevel>('de');
   const [quizLoading, setQuizLoading] = useState(false);
   const [quizError, setQuizError] = useState('');
   const [quizQuestions, setQuizQuestions] = useState<AIQuizQuestion[]>([]);
@@ -99,13 +129,13 @@ export default function HomePage() {
   const [quizScore, setQuizScore] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [pvpSubmitted, setPvpSubmitted] = useState(false);
-
-  const [bossChecklist, setBossChecklist] = useState({
-    task1: false,
-    task2: false,
-    task3: false
+  const [dailyQuizState, setDailyQuizState] = useState<DailyQuizState>({
+    date: todayKey(),
+    levelsUsed: { de: false, trung_binh: false, kho: false, cuc_kho: false },
+    streak: 0
   });
 
+  const [bossChecklist, setBossChecklist] = useState({ task1: false, task2: false, task3: false });
   const [spinResult, setSpinResult] = useState('Chưa quay vòng quay');
 
   const currentKnowledge = useMemo(() => knowledgeCards[knowledgeIndex], [knowledgeIndex]);
@@ -127,6 +157,18 @@ export default function HomePage() {
     return { done, target, percent };
   }, [teamMissions]);
 
+  const dailyDifficulty = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return { label: 'Buổi sáng: Dễ', missionBoost: 0, quizBoost: 0 };
+    if (hour < 18) return { label: 'Buổi chiều: Trung bình', missionBoost: 1, quizBoost: 1 };
+    return { label: 'Buổi tối: Khó dần', missionBoost: 2, quizBoost: 2 };
+  }, []);
+
+  const pushNotice = (title: string, message: string, type: Notice['type']) => {
+    const id = Date.now() + Math.floor(Math.random() * 999);
+    setNotices((prev) => [{ id, title, message, type }, ...prev].slice(0, 8));
+  };
+
   useEffect(() => {
     const savedId = localStorage.getItem('arena_user_id');
     const savedName = localStorage.getItem('arena_nickname');
@@ -139,6 +181,18 @@ export default function HomePage() {
       setNickname(savedName);
       setAvatar(savedAvatar);
       setEnergy(savedEnergy);
+
+      const rawDaily = localStorage.getItem(`arena_daily_quiz_${savedId}`);
+      if (rawDaily) {
+        try {
+          const parsed = JSON.parse(rawDaily) as DailyQuizState;
+          if (parsed.date === todayKey()) {
+            setDailyQuizState(parsed);
+          }
+        } catch {
+          // bỏ qua
+        }
+      }
     }
 
     if (savedMissions) {
@@ -166,12 +220,17 @@ export default function HomePage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!userId) return;
+    localStorage.setItem(`arena_daily_quiz_${userId}`, JSON.stringify(dailyQuizState));
+  }, [dailyQuizState, userId]);
+
   const celebrate = () => {
     const confetti = document.createElement('div');
     confetti.className = 'fixed inset-0 pointer-events-none z-50 flex items-center justify-center text-5xl';
-    confetti.innerText = '🔥 ⚡ ✨';
+    confetti.innerText = '🌿 ⚡ ✨';
     document.body.appendChild(confetti);
-    setTimeout(() => confetti.remove(), 1000);
+    setTimeout(() => confetti.remove(), 900);
   };
 
   const registerPlayer = async () => {
@@ -180,14 +239,37 @@ export default function HomePage() {
     await createUserProfile({ id, nickname, avatar });
     setUserId(id);
     setEnergy(0);
+    const today = todayKey();
+    const initialDaily: DailyQuizState = {
+      date: today,
+      levelsUsed: { de: false, trung_binh: false, kho: false, cuc_kho: false },
+      streak: 0
+    };
+    setDailyQuizState(initialDaily);
     localStorage.setItem('arena_user_id', id);
     localStorage.setItem('arena_nickname', nickname);
     localStorage.setItem('arena_avatar', avatar);
     localStorage.setItem('arena_energy', '0');
+    localStorage.setItem(`arena_daily_quiz_${id}`, JSON.stringify(initialDaily));
+    pushNotice('Tạo tài khoản thành công', `Chào mừng ${nickname} đến đấu trường năng lượng xanh!`, 'success');
+  };
+
+  const logoutPlayer = () => {
+    localStorage.removeItem('arena_user_id');
+    localStorage.removeItem('arena_nickname');
+    localStorage.removeItem('arena_avatar');
+    localStorage.removeItem('arena_energy');
+    setUserId('');
+    setNickname('');
+    setEnergy(0);
+    setQuizQuestions([]);
+    setQuizIndex(0);
+    setQuizScore(0);
+    pushNotice('Đã thoát tài khoản', 'Bạn có thể đăng ký hoặc đăng nhập tài khoản khác.', 'info');
   };
 
   const updateEnergy = async (value: number) => {
-    if (!userId) return;
+    if (!userId || value === 0) return;
     await addEnergyPoint(userId, value);
     setEnergy((prev) => {
       const next = prev + value;
@@ -198,35 +280,37 @@ export default function HomePage() {
   };
 
   const onReadDone = async () => {
-    await updateEnergy(10);
+    await updateEnergy(10 + dailyDifficulty.quizBoost);
     setKnowledgeIndex((prev) => (prev + 1) % knowledgeCards.length);
   };
 
   const onChallengeAnswer = async (answer: string) => {
     if (!userId) return;
     if (energy < 30) {
-      alert('Bạn cần ít nhất 30 điểm để vào Đấu Trường Sinh Tồn!');
+      pushNotice('Chưa đủ điểm', 'Bạn cần ít nhất 30 điểm để vào Đấu Trường Sinh Tồn!', 'warn');
       return;
     }
     if (answer === challenge.correct) {
-      await updateEnergy(20);
+      await updateEnergy(20 + dailyDifficulty.quizBoost);
+      pushNotice('Trả lời đúng', 'Bạn nhận thêm điểm năng lượng!', 'success');
     } else {
-      alert('Chưa đúng rồi, thử lại nhé!');
+      pushNotice('Sai đáp án', 'Chưa đúng rồi, thử lại nhé!', 'warn');
     }
   };
 
   const onSubmitIdea = async () => {
     if (!userId || !gocRe || !thanCay || !tanCay) return;
     await submitIdea({ userId, userName: nickname, gocRe, thanCay, tanCay });
-    await updateEnergy(50);
+    await updateEnergy(50 + dailyDifficulty.missionBoost * 2);
     setGocRe('');
     setThanCay('');
     setTanCay('');
+    pushNotice('Ý tưởng đã gửi', 'Cảm ơn bạn đã đóng góp ý tưởng xanh cho lớp!', 'success');
   };
 
   const onCompleteMission = async (mission: Mission) => {
     if (!userId) {
-      alert('Bạn hãy đăng nhập hồ sơ trước khi nhận nhiệm vụ nhé!');
+      pushNotice('Cần đăng nhập', 'Bạn hãy đăng nhập hồ sơ trước khi nhận nhiệm vụ nhé!', 'warn');
       return;
     }
     if (missionStatus[mission.id]) return;
@@ -234,7 +318,8 @@ export default function HomePage() {
     const nextStatus = { ...missionStatus, [mission.id]: true };
     setMissionStatus(nextStatus);
     localStorage.setItem('arena_missions', JSON.stringify(nextStatus));
-    await updateEnergy(mission.reward);
+    await updateEnergy(mission.reward + dailyDifficulty.missionBoost * 2);
+    pushNotice('Hoàn thành nhiệm vụ', `Bạn hoàn thành: ${mission.title}`, 'success');
   };
 
   const onContributeTeamMission = async (mission: TeamMission) => {
@@ -245,19 +330,44 @@ export default function HomePage() {
 
     const success = await contributeTeamMission(userId, nickname, mission);
     if (success) {
+      const bonus = mission.reward + dailyDifficulty.missionBoost;
       setTeamMissionMessage(`✅ Bạn đã đóng góp cho nhiệm vụ: ${mission.title}.`);
       setEnergy((prev) => {
-        const next = prev + mission.reward;
+        const next = prev + bonus;
         localStorage.setItem('arena_energy', String(next));
         return next;
       });
       celebrate();
+      pushNotice('Đóng góp thành công', `Bạn nhận +${bonus} điểm từ nhiệm vụ lớp.`, 'success');
     } else {
       setTeamMissionMessage('ℹ️ Bạn đã đóng góp nhiệm vụ này rồi, hãy hỗ trợ nhiệm vụ khác nhé!');
+      pushNotice('Đã tham gia trước đó', 'Mỗi tài khoản chỉ tính 1 lượt mỗi nhiệm vụ lớp.', 'info');
     }
   };
 
   const generateAIQuiz = async () => {
+    if (!userId) {
+      pushNotice('Cần đăng nhập', 'Hãy đăng nhập trước khi tạo quiz AI.', 'warn');
+      return;
+    }
+
+    const today = todayKey();
+    const normalized = dailyQuizState.date === today ? dailyQuizState : {
+      date: today,
+      levelsUsed: { de: false, trung_binh: false, kho: false, cuc_kho: false },
+      streak: 0
+    };
+
+    if (normalized.levelsUsed[quizLevel]) {
+      pushNotice('Giới hạn trong ngày', `Mức ${levelLabel(quizLevel)} đã được chọn hôm nay. Hãy chọn mức khác.`, 'warn');
+      return;
+    }
+
+    setDailyQuizState({
+      ...normalized,
+      levelsUsed: { ...normalized.levelsUsed, [quizLevel]: true }
+    });
+
     setQuizLoading(true);
     setQuizError('');
     setQuizQuestions([]);
@@ -270,7 +380,7 @@ export default function HomePage() {
       const response = await fetch('/api/quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: quizTopic, level: quizLevel, count: 5 })
+        body: JSON.stringify({ topic: quizTopic, level: quizLevel, count: 10 })
       });
 
       const data = (await response.json()) as { questions?: AIQuizQuestion[]; error?: string };
@@ -279,8 +389,10 @@ export default function HomePage() {
       }
 
       setQuizQuestions(data.questions);
+      pushNotice('Tạo quiz thành công', `Bộ câu hỏi mức ${levelLabel(quizLevel)} đã sẵn sàng.`, 'success');
     } catch (error) {
       setQuizError(error instanceof Error ? error.message : 'Lỗi không xác định khi tạo quiz AI.');
+      pushNotice('Lỗi tạo quiz', 'Hiện chưa tạo được quiz AI, vui lòng thử lại sau.', 'warn');
     } finally {
       setQuizLoading(false);
     }
@@ -291,8 +403,25 @@ export default function HomePage() {
 
     const isCorrect = selectedOption === currentQuiz.correctIndex;
     if (isCorrect) {
+      const base = baseRewardByLevel[quizLevel] + dailyDifficulty.quizBoost;
+      const nextStreak = dailyQuizState.streak + 1;
+      let reward = base;
+
+      if (quizLevel === 'cuc_kho' && nextStreak >= 3) {
+        reward = base * 2;
+        pushNotice('Combo tuyệt vời!', 'Bạn đúng 3 câu liên tiếp ở mức cực khó: nhận điểm gấp đôi!', 'success');
+      }
+
+      await updateEnergy(reward);
       setQuizScore((prev) => prev + 1);
-      await updateEnergy(8);
+      setDailyQuizState((prev) => ({ ...prev, streak: nextStreak }));
+    } else {
+      const penalty = penaltyByLevel[quizLevel];
+      if (penalty < 0) {
+        await updateEnergy(penalty);
+        pushNotice('Sai ở mức khó', `Bạn bị trừ ${Math.abs(penalty)} điểm vì chọn mức ${levelLabel(quizLevel)}.`, 'warn');
+      }
+      setDailyQuizState((prev) => ({ ...prev, streak: 0 }));
     }
 
     setSelectedOption(null);
@@ -301,8 +430,11 @@ export default function HomePage() {
 
   const finishBonus = async () => {
     if (!userId || quizQuestions.length === 0) return;
-    if (quizScore >= 4) {
-      await updateEnergy(20);
+    if (quizScore >= 6) {
+      await updateEnergy(25);
+      pushNotice('Thưởng hoàn thành', 'Bạn đạt ngưỡng thưởng bài quiz trong ngày!', 'success');
+    } else {
+      pushNotice('Hoàn thành quiz', 'Bạn đã làm xong quiz. Cố gắng thêm để nhận thưởng nhé!', 'info');
     }
   };
 
@@ -311,13 +443,14 @@ export default function HomePage() {
     await submitPvpScore(userId, nickname, quizScore);
     setPvpSubmitted(true);
     await updateEnergy(10);
+    pushNotice('Đã gửi PvP', 'Điểm của bạn đã lên bảng PvP 1v1.', 'success');
   };
 
   const submitBossChallenge = async () => {
     if (!userId) return;
     const score = [bossChecklist.task1, bossChecklist.task2, bossChecklist.task3].filter(Boolean).length * 35;
     await submitBossAttempt(userId, nickname, score);
-    alert(score >= 80 ? 'Bạn đã vượt Boss tuần và nhận thưởng!' : 'Bạn đã gửi thử thách Boss tuần. Hãy cố thêm nhé!');
+    pushNotice('Boss tuần', score >= 80 ? 'Bạn đã vượt Boss tuần và nhận thưởng!' : 'Bạn đã gửi thử thách Boss tuần. Hãy cố thêm nhé!', score >= 80 ? 'success' : 'info');
     setBossChecklist({ task1: false, task2: false, task3: false });
   };
 
@@ -327,6 +460,9 @@ export default function HomePage() {
     setSpinResult(result.text);
     if (result.value > 0) {
       await updateEnergy(result.value);
+      pushNotice('Vòng quay xanh', `Chúc mừng! ${result.text}.`, 'success');
+    } else {
+      pushNotice('Vòng quay xanh', 'Lần này chưa may mắn, thử lại nhé!', 'info');
     }
   };
 
@@ -354,35 +490,37 @@ export default function HomePage() {
       <header className="fire-shell mb-6 rounded-xl px-4 py-4 md:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="molten-title text-3xl md:text-5xl">Arena Năng Lượng Xanh</h1>
-          <nav className="flex gap-2 text-sm md:text-base">
-            <button className="energy-button px-3 py-2">Nhiệm vụ lớp</button>
-            <button className="energy-button px-3 py-2">Đấu trường AI</button>
-            <button className="energy-button px-3 py-2">Bảng xếp hạng</button>
-          </nav>
+          <div className="flex flex-wrap gap-2 text-sm md:text-base">
+            <span className="status-pill px-3 py-2">🗓️ {dailyDifficulty.label}</span>
+            {userId ? (
+              <button className="energy-button px-3 py-2" onClick={logoutPlayer}>
+                Thoát tài khoản
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
 
-      <section className="module-grid mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {[
-          ['⚔️', 'Chiến Binh Arena', 'Đấu trường sinh tử'],
-          ['🛡️', 'Biệt Đội Arena', 'Hợp sức tác chiến'],
-          ['⚡', 'Nhanh Như Chớp', 'Tốc độ sấm sét'],
-          ['📘', 'Arena Thi Online', 'Khảo thí thi online'],
-          ['👥', 'Bảng Tương Tác', 'Kết nối thời gian thực'],
-          ['📤', 'Cổng Nộp Bài', 'Dành cho học sinh']
-        ].map((module) => (
-          <article key={module[1]} className="module-tile rounded-2xl p-7 text-center">
-            <div className="module-icon mx-auto mb-4 grid h-12 w-12 place-items-center">{module[0]}</div>
-            <h3 className="text-3xl font-extrabold uppercase tracking-wide text-slate-100 md:text-4xl">{module[1]}</h3>
-            <p className="mt-1 text-xs uppercase tracking-[0.25em] text-cyan-300">{module[2]}</p>
-          </article>
-        ))}
+      <section className="notice-board mb-6 rounded-xl p-4">
+        <h3 className="text-lg font-black text-emerald-200">📣 Bảng thông báo năng lượng</h3>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {notices.length === 0 ? (
+            <p className="text-sm text-emerald-100">Chưa có thông báo mới. Hãy bắt đầu một nhiệm vụ để nhận cập nhật.</p>
+          ) : (
+            notices.map((n) => (
+              <div key={n.id} className={`notice-item notice-${n.type} rounded-md p-2`}>
+                <p className="font-bold">{n.title}</p>
+                <p className="text-sm">{n.message}</p>
+              </div>
+            ))
+          )}
+        </div>
       </section>
 
       {!userId ? (
         <section className="fire-card mb-6 rounded-lg p-5 md:p-6">
-          <h2 className="text-2xl font-black text-yellow-300">1) Khởi tạo hồ sơ Chiến Binh</h2>
-          <p className="mt-1 text-sm text-orange-100">Nhập tên và chọn avatar để tạo tài khoản trong Firestore.</p>
+          <h2 className="text-2xl font-black text-emerald-200">🔐 Đăng ký tài khoản chiến binh</h2>
+          <p className="mt-1 text-sm text-emerald-100">Mỗi học sinh dùng 1 tài khoản để lưu điểm và giới hạn nhiệm vụ theo ngày.</p>
           <div className="mt-4 flex flex-col gap-3 md:flex-row">
             <input className="fire-input p-3 md:flex-1" placeholder="Nhập Tên Chiến Binh" value={nickname} onChange={(event) => setNickname(event.target.value)} />
             <select className="fire-input p-3" value={avatar} onChange={(event) => setAvatar(event.target.value)}>
@@ -393,24 +531,24 @@ export default function HomePage() {
               ))}
             </select>
             <button onClick={registerPlayer} className="energy-button px-5 py-3">
-              Vào đấu trường
+              Tạo tài khoản
             </button>
           </div>
         </section>
       ) : (
         <section className="fire-shell mb-6 grid gap-4 rounded-xl p-4 md:grid-cols-3">
           <div className="fire-card rounded-lg p-4">
-            <p className="text-xs uppercase text-orange-200">Chiến binh</p>
-            <p className="mt-1 text-2xl font-black text-yellow-300">
+            <p className="text-xs uppercase text-emerald-200">Chiến binh</p>
+            <p className="mt-1 text-2xl font-black text-lime-200">
               {avatar} {nickname}
             </p>
           </div>
           <div className="fire-card rounded-lg p-4">
-            <p className="text-xs uppercase text-orange-200">Điểm năng lượng</p>
-            <p className="mt-1 text-2xl font-black text-yellow-300">⚡ {energy}</p>
+            <p className="text-xs uppercase text-emerald-200">Điểm năng lượng</p>
+            <p className="mt-1 text-2xl font-black text-lime-200">⚡ {energy}</p>
           </div>
           <div className="fire-card rounded-lg p-4">
-            <p className="text-xs uppercase text-orange-200">Cấp bậc hiện tại</p>
+            <p className="text-xs uppercase text-emerald-200">Cấp bậc hiện tại</p>
             <p className={`mt-1 text-xl font-black ${growth.current.color}`}>{growth.current.rank}</p>
           </div>
         </section>
@@ -418,46 +556,46 @@ export default function HomePage() {
 
       <section className="mb-6 grid gap-4 xl:grid-cols-3">
         <article className="fire-card rounded-lg p-5 xl:col-span-2">
-          <h3 className="text-xl font-black text-yellow-300">🤝 Co-op Team: Nhiệm vụ lớp thời gian thực</h3>
-          <p className="mt-1 text-sm text-orange-100">Mọi người cùng tham gia để tăng tiến độ nhiệm vụ chung. Mỗi bạn chỉ đóng góp 1 lần / nhiệm vụ.</p>
+          <h3 className="text-xl font-black text-emerald-200">🤝 Nhiệm vụ lớp theo thời gian thực</h3>
+          <p className="mt-1 text-sm text-emerald-100">Nhiệm vụ sẽ khó dần trong ngày theo khung giờ để tăng thử thách.</p>
           <div className="mt-4 space-y-3">
             {teamMissions.map((mission) => {
-              const percent = Math.min(100, Math.round((mission.progress / mission.target) * 100));
+              const target = mission.target + dailyDifficulty.missionBoost * 3;
+              const percent = Math.min(100, Math.round((mission.progress / target) * 100));
               return (
                 <div key={mission.id} className="team-mission-card rounded-md p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <strong className="text-yellow-100">{mission.title}</strong>
-                    <span className="text-xs text-orange-200">
-                      {mission.progress}/{mission.target} ({percent}%)
+                    <strong className="text-emerald-100">{mission.title}</strong>
+                    <span className="text-xs text-emerald-200">
+                      {mission.progress}/{target} ({percent}%)
                     </span>
                   </div>
                   <div className="mt-2 h-2 overflow-hidden rounded bg-slate-800">
                     <div className="growth-bar h-full" style={{ width: `${percent}%` }} />
                   </div>
                   <div className="mt-2 flex items-center justify-between">
-                    <span className="text-xs text-orange-200">Đã tham gia: {mission.participantsCount} bạn</span>
+                    <span className="text-xs text-emerald-200">Đã tham gia: {mission.participantsCount} bạn</span>
                     <button onClick={() => onContributeTeamMission(mission)} className="energy-button px-3 py-1 text-sm">
-                      Đóng góp (+{mission.reward})
+                      Đóng góp (+{mission.reward + dailyDifficulty.missionBoost})
                     </button>
                   </div>
                 </div>
               );
             })}
           </div>
-          {teamMissionMessage ? <p className="mt-3 text-sm text-yellow-200">{teamMissionMessage}</p> : null}
+          {teamMissionMessage ? <p className="mt-3 text-sm text-lime-200">{teamMissionMessage}</p> : null}
         </article>
 
         <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">🛰️ Radar nhiệm vụ</h3>
-          <p className="mt-1 text-sm text-orange-100">Bảng radar cho biết cả lớp đang hoàn thành nhiệm vụ tới đâu.</p>
-          <div className="mt-4 rounded-md border border-orange-500/30 bg-black/35 p-3">
-            <p className="text-xs uppercase text-orange-300">Tiến độ lớp</p>
-            <p className="mt-1 text-2xl font-black text-yellow-200">{radarSummary.percent}%</p>
-            <p className="text-sm text-orange-200">
+          <h3 className="text-xl font-black text-emerald-200">🛰️ Radar nhiệm vụ</h3>
+          <div className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
+            <p className="text-xs uppercase text-emerald-200">Tiến độ lớp</p>
+            <p className="mt-1 text-2xl font-black text-lime-200">{radarSummary.percent}%</p>
+            <p className="text-sm text-emerald-200">
               {radarSummary.done}/{radarSummary.target} lượt đóng góp
             </p>
           </div>
-          <ul className="mt-3 space-y-2 text-sm text-orange-100">
+          <ul className="mt-3 space-y-2 text-sm text-emerald-100">
             <li>👥 Số chiến binh đang có điểm: {leaderboard.length}</li>
             <li>🔥 Top 1 hiện tại: {leaderboard[0]?.nickname ?? 'Chưa có dữ liệu'}</li>
             <li>⚡ Tổng điểm top 5: {leaderboard.slice(0, 5).reduce((sum, item) => sum + item.diem_nang_luong, 0)}</li>
@@ -467,28 +605,26 @@ export default function HomePage() {
 
       <section className="mb-6 grid gap-4 xl:grid-cols-3">
         <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">🤖 PvP 1v1 AI Sprint</h3>
-          <p className="mt-1 text-sm text-orange-100">Làm bài quiz AI và gửi điểm lên bảng PvP để cạnh tranh với mọi người.</p>
+          <h3 className="text-xl font-black text-emerald-200">🤖 PvP 1v1 AI Sprint</h3>
           {quizFinished ? (
             <button onClick={submitPvpFromQuiz} disabled={pvpSubmitted} className="energy-button mt-3 w-full p-2 disabled:opacity-60">
-              {pvpSubmitted ? 'Đã gửi điểm PvP' : `Gửi điểm PvP: ${quizScore}/5 (+10 điểm)`}
+              {pvpSubmitted ? 'Đã gửi điểm PvP' : `Gửi điểm PvP: ${quizScore}/${quizQuestions.length} (+10 điểm)`}
             </button>
           ) : (
-            <p className="mt-3 text-sm text-orange-200">Hoàn thành AI Quiz để mở khoá nút gửi PvP.</p>
+            <p className="mt-3 text-sm text-emerald-100">Hoàn thành AI Quiz để mở khoá gửi điểm PvP.</p>
           )}
           <ol className="mt-3 space-y-2 text-sm">
             {pvpBoard.map((item, index) => (
               <li key={item.id} className="rounded border border-cyan-500/30 bg-cyan-900/10 px-2 py-1 text-cyan-100">
-                {index + 1}. {item.userName} - {item.score}/5
+                {index + 1}. {item.userName} - {item.score}
               </li>
             ))}
           </ol>
         </article>
 
         <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">🔥 Boss Tuần</h3>
-          <p className="mt-1 text-sm text-orange-100">Hoàn thành 3 thử thách môi trường. Từ 80 điểm sẽ nhận huy hiệu + thưởng.</p>
-          <div className="mt-3 space-y-2 text-sm text-orange-100">
+          <h3 className="text-xl font-black text-emerald-200">🔥 Boss tuần</h3>
+          <div className="mt-3 space-y-2 text-sm text-emerald-100">
             <label className="boss-check flex items-center gap-2 rounded-md px-2 py-2">
               <input type="checkbox" checked={bossChecklist.task1} onChange={(event) => setBossChecklist((prev) => ({ ...prev, task1: event.target.checked }))} />
               Tắt điện trước khi rời lớp
@@ -507,7 +643,7 @@ export default function HomePage() {
           </button>
           <ol className="mt-3 space-y-2 text-sm">
             {bossBoard.map((item, index) => (
-              <li key={item.id} className="rounded border border-orange-500/30 bg-orange-900/10 px-2 py-1 text-orange-100">
+              <li key={item.id} className="rounded border border-emerald-500/30 bg-emerald-900/10 px-2 py-1 text-emerald-100">
                 {index + 1}. {item.userName} - {item.score} điểm
               </li>
             ))}
@@ -515,36 +651,39 @@ export default function HomePage() {
         </article>
 
         <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">🎁 Vòng quay xanh</h3>
-          <p className="mt-1 text-sm text-orange-100">Dùng để tăng hứng thú: quay mỗi lượt để nhận thưởng ngẫu nhiên.</p>
+          <h3 className="text-xl font-black text-emerald-200">🎁 Vòng quay xanh</h3>
           <button onClick={spinGreenWheel} className="energy-button mt-3 w-full p-3">
             Quay ngay
           </button>
-          <p className="mt-3 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2 text-sm text-yellow-200">Kết quả: {spinResult}</p>
+          <p className="mt-3 rounded-md border border-lime-500/40 bg-lime-500/10 p-2 text-sm text-lime-200">Kết quả: {spinResult}</p>
         </article>
       </section>
 
       <section className="mb-6 grid gap-4 lg:grid-cols-2">
         <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">🤖 AI Quiz Generator</h3>
-          <p className="mt-1 text-sm text-orange-100">Nhập chủ đề, hệ thống sẽ tạo câu hỏi trắc nghiệm để học sinh tương tác trực tiếp.</p>
+          <h3 className="text-xl font-black text-emerald-200">🤖 AI Quiz Generator</h3>
+          <p className="mt-1 text-sm text-emerald-100">Mỗi tài khoản chỉ chọn mỗi mức độ 1 lần trong ngày. Bộ câu hỏi gồm nhiều câu hơn và có Doraemon/Nobita.</p>
           <div className="mt-3 grid gap-2 md:grid-cols-3">
-            <input value={quizTopic} onChange={(event) => setQuizTopic(event.target.value)} className="fire-input col-span-2 p-2" placeholder="Ví dụ: Tiết kiệm nước ở trường" />
-            <select value={quizLevel} onChange={(event) => setQuizLevel(event.target.value as 'de' | 'trung_binh' | 'kho')} className="fire-input p-2">
+            <input value={quizTopic} onChange={(event) => setQuizTopic(event.target.value)} className="fire-input col-span-2 p-2" placeholder="Ví dụ: Bảo vệ môi trường với Doraemon" />
+            <select value={quizLevel} onChange={(event) => setQuizLevel(event.target.value as AIQuizLevel)} className="fire-input p-2">
               <option value="de">Dễ</option>
               <option value="trung_binh">Trung bình</option>
               <option value="kho">Khó</option>
+              <option value="cuc_kho">Cực khó</option>
             </select>
           </div>
+          <div className="mt-2 text-xs text-emerald-200">
+            Đã dùng hôm nay: {Object.entries(dailyQuizState.levelsUsed).filter(([, used]) => used).map(([lvl]) => levelLabel(lvl as AIQuizLevel)).join(', ') || 'Chưa dùng mức nào'}
+          </div>
           <button disabled={quizLoading} onClick={generateAIQuiz} className="energy-button mt-3 w-full p-3 disabled:opacity-60">
-            {quizLoading ? 'Đang tạo bộ câu hỏi...' : 'Tạo 5 câu hỏi bằng AI'}
+            {quizLoading ? 'Đang tạo bộ câu hỏi...' : 'Tạo 10 câu hỏi bằng AI'}
           </button>
           {quizError ? <p className="mt-2 text-sm text-red-300">{quizError}</p> : null}
 
           {currentQuiz ? (
             <div className="quiz-panel mt-4 rounded-md p-3">
-              <p className="text-sm text-orange-200">Câu {quizIndex + 1}/{quizQuestions.length}</p>
-              <h4 className="mt-1 text-lg font-bold text-yellow-100">{currentQuiz.question}</h4>
+              <p className="text-sm text-emerald-200">Câu {quizIndex + 1}/{quizQuestions.length} • Chuỗi đúng: {dailyQuizState.streak}</p>
+              <h4 className="mt-1 text-lg font-bold text-lime-100">{currentQuiz.question}</h4>
               <div className="mt-3 space-y-2">
                 {currentQuiz.options.map((option, index) => (
                   <button key={`${option}-${index}`} onClick={() => setSelectedOption(index)} className={`quiz-option w-full rounded-md p-2 text-left ${selectedOption === index ? 'quiz-option-active' : ''}`}>
@@ -560,9 +699,9 @@ export default function HomePage() {
 
           {quizFinished ? (
             <div className="quiz-panel mt-4 rounded-md p-3 text-center">
-              <p className="text-sm text-orange-200">Bạn đã hoàn thành bài AI Quiz!</p>
-              <p className="mt-1 text-2xl font-black text-yellow-300">Điểm đúng: {quizScore}/5</p>
-              <p className="mt-1 text-xs text-orange-200">Thưởng thêm +20 điểm nếu đạt từ 4/5 câu đúng.</p>
+              <p className="text-sm text-emerald-200">Bạn đã hoàn thành bài AI Quiz!</p>
+              <p className="mt-1 text-2xl font-black text-lime-300">Điểm đúng: {quizScore}/{quizQuestions.length}</p>
+              <p className="mt-1 text-xs text-emerald-200">Đạt từ 6 câu đúng để nhận thưởng hoàn thành +25 điểm.</p>
               <button onClick={finishBonus} className="energy-button mt-3 w-full p-2">
                 Nhận thưởng hoàn thành
               </button>
@@ -571,10 +710,9 @@ export default function HomePage() {
         </article>
 
         <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">📈 Module Mô Hình Tăng Trưởng</h3>
-          <p className="mt-2 text-sm text-orange-100">Mỗi điểm năng lượng là một bước tiến trên hành trình trở thành thủ lĩnh xanh.</p>
-          <div className="mt-4 rounded-md border border-orange-500/40 bg-black/40 p-3">
-            <div className="mb-2 flex items-center justify-between text-xs uppercase text-orange-200">
+          <h3 className="text-xl font-black text-emerald-200">📈 Tăng trưởng & nhiệm vụ cá nhân</h3>
+          <div className="mt-4 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
+            <div className="mb-2 flex items-center justify-between text-xs uppercase text-emerald-200">
               <span>{growth.current.rank}</span>
               <span>{growth.next ? `Tiếp theo: ${growth.next.rank} (${growth.next.min}đ)` : 'Đã đạt cấp tối đa'}</span>
             </div>
@@ -582,23 +720,23 @@ export default function HomePage() {
               <div className="growth-bar h-full" style={{ width: `${growth.progress}%` }} />
             </div>
           </div>
-          <ul className="mt-4 grid gap-2 text-sm text-orange-100 md:grid-cols-2">
+          <ul className="mt-4 grid gap-2 text-sm text-emerald-100 md:grid-cols-2">
             {growthMilestones.map((item) => (
-              <li key={item.rank} className="rounded border border-orange-500/20 bg-black/20 px-2 py-1">
+              <li key={item.rank} className="rounded border border-emerald-500/20 bg-emerald-950/20 px-2 py-1">
                 <span className={`font-bold ${item.color}`}>{item.rank}</span> - mốc {item.min} điểm
               </li>
             ))}
           </ul>
 
-          <h4 className="mt-4 text-lg font-black text-yellow-200">🎯 Nhiệm vụ cá nhân</h4>
+          <h4 className="mt-4 text-lg font-black text-lime-200">🎯 Nhiệm vụ cá nhân</h4>
           <div className="mt-2 space-y-2">
             {personalMissions.map((mission) => (
               <button key={mission.id} onClick={() => onCompleteMission(mission)} className="mission-row flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left">
                 <div>
-                  <p className="font-semibold text-yellow-100">{mission.title}</p>
-                  <p className="text-xs text-orange-200">{mission.note}</p>
+                  <p className="font-semibold text-emerald-100">{mission.title}</p>
+                  <p className="text-xs text-emerald-200">{mission.note}</p>
                 </div>
-                <strong className="text-sm text-yellow-300">{missionStatus[mission.id] ? 'Đã xong ✅' : `+${mission.reward}`}</strong>
+                <strong className="text-sm text-lime-300">{missionStatus[mission.id] ? 'Đã xong ✅' : `+${mission.reward + dailyDifficulty.missionBoost * 2}`}</strong>
               </button>
             ))}
           </div>
@@ -607,18 +745,18 @@ export default function HomePage() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">📘 Thẻ 1: Trạm Luyện Tập</h3>
-          <p className="mt-2 text-orange-100">
+          <h3 className="text-xl font-black text-emerald-200">📘 Thẻ 1: Trạm Luyện Tập</h3>
+          <p className="mt-2 text-emerald-100">
             {currentKnowledge.icon} {currentKnowledge.text}
           </p>
           <button onClick={onReadDone} className="energy-button mt-4 w-full p-3">
-            Đã hiểu (+10 điểm)
+            Đã hiểu (+{10 + dailyDifficulty.quizBoost} điểm)
           </button>
         </article>
 
         <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">🧠 Thẻ 2: Đấu Trường Sinh Tồn</h3>
-          <p className="mt-2 text-orange-100">{challenge.question}</p>
+          <h3 className="text-xl font-black text-emerald-200">🧠 Thẻ 2: Đấu Trường Sinh Tồn</h3>
+          <p className="mt-2 text-emerald-100">{challenge.question}</p>
           <div className="mt-3 space-y-2">
             {challenge.answer.map((answer) => (
               <button key={answer} onClick={() => onChallengeAnswer(answer)} className="energy-button w-full p-2 text-left">
@@ -629,17 +767,17 @@ export default function HomePage() {
         </article>
 
         <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">🌳 Thẻ 3: Xưởng Sáng Chế</h3>
+          <h3 className="text-xl font-black text-emerald-200">🌳 Thẻ 3: Xưởng Sáng Chế</h3>
           <input className="fire-input mt-2 w-full p-2" placeholder="Gốc rễ (Vấn đề)" value={gocRe} onChange={(event) => setGocRe(event.target.value)} />
           <input className="fire-input mt-2 w-full p-2" placeholder="Thân cây (Nguyên nhân)" value={thanCay} onChange={(event) => setThanCay(event.target.value)} />
           <input className="fire-input mt-2 w-full p-2" placeholder="Tán cây (Giải pháp)" value={tanCay} onChange={(event) => setTanCay(event.target.value)} />
           <button onClick={onSubmitIdea} className="energy-button mt-3 w-full p-3">
-            Gửi ý tưởng (+50 điểm)
+            Gửi ý tưởng (+{50 + dailyDifficulty.missionBoost * 2} điểm)
           </button>
         </article>
 
         <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">🏆 Thẻ 4: Bảng Tương Tác</h3>
+          <h3 className="text-xl font-black text-emerald-200">🏆 Thẻ 4: Bảng Tương Tác</h3>
           <ol className="mt-3 space-y-2">
             {leaderboard.slice(0, 5).map((user, index) => (
               <li key={user.id} className="fire-input flex items-center justify-between p-2">
