@@ -6,6 +6,12 @@ import { addEnergyPoint, createUserProfile, submitIdea, subscribeLeaderboard, ty
 type KnowledgeCard = { id: number; text: string; icon: string };
 type ChallengeCard = { id: number; question: string; answer: string[]; correct: string };
 type Mission = { id: number; title: string; reward: number; note: string };
+type AIQuizQuestion = {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+};
 
 const avatars = ['🦸', '🌱', '⚡', '🌍', '💧', '☀️'];
 
@@ -44,6 +50,14 @@ const growthMilestones = [
   { min: 220, rank: 'Huyền Thoại Plasma', color: 'text-cyan-300' }
 ];
 
+const interactionIdeas = [
+  '⚔️ PvP 1v1: Hai bạn tranh tài trả lời nhanh 5 câu hỏi AI.',
+  '🤝 Co-op Team: Cả nhóm cùng mở khóa nhiệm vụ trường lớp.',
+  '🔥 Boss tuần: Vượt chuỗi thử thách môi trường để nhận huy hiệu.',
+  '🎁 Vòng quay xanh: Đổi điểm lấy thẻ buff nhân đôi năng lượng.',
+  '🛰️ Radar nhiệm vụ: Hiển thị tiến độ lớp theo thời gian thực.'
+];
+
 export default function HomePage() {
   const [nickname, setNickname] = useState('');
   const [avatar, setAvatar] = useState(avatars[0]);
@@ -55,11 +69,21 @@ export default function HomePage() {
   const [gocRe, setGocRe] = useState('');
   const [thanCay, setThanCay] = useState('');
   const [tanCay, setTanCay] = useState('');
-
   const [missionStatus, setMissionStatus] = useState<Record<number, boolean>>({});
+
+  const [quizTopic, setQuizTopic] = useState('Tiết kiệm điện trong gia đình');
+  const [quizLevel, setQuizLevel] = useState<'de' | 'trung_binh' | 'kho'>('de');
+  const [quizLoading, setQuizLoading] = useState(false);
+  const [quizError, setQuizError] = useState('');
+  const [quizQuestions, setQuizQuestions] = useState<AIQuizQuestion[]>([]);
+  const [quizIndex, setQuizIndex] = useState(0);
+  const [quizScore, setQuizScore] = useState(0);
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
 
   const currentKnowledge = useMemo(() => knowledgeCards[knowledgeIndex], [knowledgeIndex]);
   const challenge = challengeCards[knowledgeIndex % challengeCards.length];
+  const currentQuiz = quizQuestions[quizIndex];
+  const quizFinished = quizQuestions.length > 0 && quizIndex >= quizQuestions.length;
 
   const growth = useMemo(() => {
     const current = [...growthMilestones].reverse().find((item) => energy >= item.min) ?? growthMilestones[0];
@@ -83,7 +107,11 @@ export default function HomePage() {
     }
 
     if (savedMissions) {
-      setMissionStatus(JSON.parse(savedMissions) as Record<number, boolean>);
+      try {
+        setMissionStatus(JSON.parse(savedMissions) as Record<number, boolean>);
+      } catch {
+        setMissionStatus({});
+      }
     }
   }, []);
 
@@ -92,7 +120,6 @@ export default function HomePage() {
     return () => unsub();
   }, []);
 
-  // Hiệu ứng chúc mừng kiểu năng lượng bùng nổ.
   const celebrate = () => {
     const confetti = document.createElement('div');
     confetti.className = 'fixed inset-0 pointer-events-none z-50 flex items-center justify-center text-5xl';
@@ -116,9 +143,11 @@ export default function HomePage() {
   const updateEnergy = async (value: number) => {
     if (!userId) return;
     await addEnergyPoint(userId, value);
-    const next = energy + value;
-    setEnergy(next);
-    localStorage.setItem('arena_energy', String(next));
+    setEnergy((prev) => {
+      const next = prev + value;
+      localStorage.setItem('arena_energy', String(next));
+      return next;
+    });
     celebrate();
   };
 
@@ -142,7 +171,6 @@ export default function HomePage() {
 
   const onSubmitIdea = async () => {
     if (!userId || !gocRe || !thanCay || !tanCay) return;
-
     await submitIdea({ userId, userName: nickname, gocRe, thanCay, tanCay });
     await updateEnergy(50);
     setGocRe('');
@@ -161,6 +189,58 @@ export default function HomePage() {
     setMissionStatus(nextStatus);
     localStorage.setItem('arena_missions', JSON.stringify(nextStatus));
     await updateEnergy(mission.reward);
+  };
+
+  const generateAIQuiz = async () => {
+    setQuizLoading(true);
+    setQuizError('');
+    setQuizQuestions([]);
+    setQuizScore(0);
+    setQuizIndex(0);
+    setSelectedOption(null);
+
+    try {
+      const response = await fetch('/api/quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: quizTopic,
+          level: quizLevel,
+          count: 5
+        })
+      });
+
+      const data = (await response.json()) as { questions?: AIQuizQuestion[]; error?: string };
+      if (!response.ok || !data.questions) {
+        throw new Error(data.error || 'Không tạo được câu hỏi.');
+      }
+
+      setQuizQuestions(data.questions);
+    } catch (error) {
+      setQuizError(error instanceof Error ? error.message : 'Lỗi không xác định khi tạo quiz AI.');
+    } finally {
+      setQuizLoading(false);
+    }
+  };
+
+  const submitQuizAnswer = async () => {
+    if (selectedOption === null || !currentQuiz) return;
+
+    const isCorrect = selectedOption === currentQuiz.correctIndex;
+    if (isCorrect) {
+      setQuizScore((prev) => prev + 1);
+      await updateEnergy(8);
+    }
+
+    setSelectedOption(null);
+    setQuizIndex((prev) => prev + 1);
+  };
+
+  const finishBonus = async () => {
+    if (!userId || quizQuestions.length === 0) return;
+    if (quizScore >= 4) {
+      await updateEnergy(20);
+    }
   };
 
   return (
@@ -206,10 +286,78 @@ export default function HomePage() {
         ].map((module) => (
           <article key={module[1]} className="module-tile rounded-2xl p-7 text-center">
             <div className="module-icon mx-auto mb-4 grid h-12 w-12 place-items-center">{module[0]}</div>
-            <h3 className="font-heading text-3xl font-extrabold uppercase tracking-wide text-slate-100 md:text-4xl">{module[1]}</h3>
+            <h3 className="text-3xl font-extrabold uppercase tracking-wide text-slate-100 md:text-4xl">{module[1]}</h3>
             <p className="mt-1 text-xs uppercase tracking-[0.25em] text-cyan-300">{module[2]}</p>
           </article>
         ))}
+      </section>
+
+      <section className="mb-6 grid gap-4 lg:grid-cols-2">
+        <article className="fire-card rounded-lg p-5">
+          <h3 className="text-xl font-black text-yellow-300">💡 Ý Tưởng Tương Tác Nâng Cao</h3>
+          <p className="mt-1 text-sm text-orange-100">Các ý tưởng này bạn có thể bật/tắt thành module mới khi phát triển phiên bản tiếp theo.</p>
+          <ul className="mt-4 space-y-2">
+            {interactionIdeas.map((idea) => (
+              <li key={idea} className="idea-chip rounded-md px-3 py-2 text-sm text-orange-100">
+                {idea}
+              </li>
+            ))}
+          </ul>
+        </article>
+
+        <article className="fire-card rounded-lg p-5">
+          <h3 className="text-xl font-black text-yellow-300">🤖 AI Quiz Generator</h3>
+          <p className="mt-1 text-sm text-orange-100">Nhập chủ đề, hệ thống sẽ tạo câu hỏi trắc nghiệm để học sinh tương tác trực tiếp.</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            <input
+              value={quizTopic}
+              onChange={(event) => setQuizTopic(event.target.value)}
+              className="fire-input col-span-2 p-2"
+              placeholder="Ví dụ: Tiết kiệm nước ở trường"
+            />
+            <select value={quizLevel} onChange={(event) => setQuizLevel(event.target.value as 'de' | 'trung_binh' | 'kho')} className="fire-input p-2">
+              <option value="de">Dễ</option>
+              <option value="trung_binh">Trung bình</option>
+              <option value="kho">Khó</option>
+            </select>
+          </div>
+          <button disabled={quizLoading} onClick={generateAIQuiz} className="energy-button mt-3 w-full p-3 disabled:opacity-60">
+            {quizLoading ? 'Đang tạo bộ câu hỏi...' : 'Tạo 5 câu hỏi bằng AI'}
+          </button>
+          {quizError ? <p className="mt-2 text-sm text-red-300">{quizError}</p> : null}
+
+          {currentQuiz ? (
+            <div className="quiz-panel mt-4 rounded-md p-3">
+              <p className="text-sm text-orange-200">Câu {quizIndex + 1}/{quizQuestions.length}</p>
+              <h4 className="mt-1 text-lg font-bold text-yellow-100">{currentQuiz.question}</h4>
+              <div className="mt-3 space-y-2">
+                {currentQuiz.options.map((option, index) => (
+                  <button
+                    key={`${option}-${index}`}
+                    onClick={() => setSelectedOption(index)}
+                    className={`quiz-option w-full rounded-md p-2 text-left ${selectedOption === index ? 'quiz-option-active' : ''}`}
+                  >
+                    {String.fromCharCode(65 + index)}. {option}
+                  </button>
+                ))}
+              </div>
+              <button onClick={submitQuizAnswer} disabled={selectedOption === null} className="energy-button mt-3 w-full p-2 disabled:opacity-60">
+                Xác nhận đáp án
+              </button>
+            </div>
+          ) : null}
+
+          {quizFinished ? (
+            <div className="quiz-panel mt-4 rounded-md p-3 text-center">
+              <p className="text-sm text-orange-200">Bạn đã hoàn thành bài AI Quiz!</p>
+              <p className="mt-1 text-2xl font-black text-yellow-300">Điểm đúng: {quizScore}/5</p>
+              <p className="mt-1 text-xs text-orange-200">Thưởng thêm +20 điểm nếu đạt từ 4/5 câu đúng.</p>
+              <button onClick={finishBonus} className="energy-button mt-3 w-full p-2">
+                Nhận thưởng hoàn thành
+              </button>
+            </div>
+          ) : null}
+        </article>
       </section>
 
       <section className="fire-shell mb-6 rounded-xl px-5 py-7 text-center md:py-10">

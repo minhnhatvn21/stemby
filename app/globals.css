@@ -169,6 +169,32 @@ body {
   box-shadow: 0 0 16px rgba(255, 122, 0, 0.2);
 }
 
+
+.idea-chip {
+  border: 1px solid rgba(255, 122, 0, 0.35);
+  background: rgba(22, 22, 22, 0.78);
+}
+
+.quiz-panel {
+  border: 1px solid rgba(255, 122, 0, 0.4);
+  background: rgba(10, 10, 10, 0.6);
+}
+
+.quiz-option {
+  border: 1px solid rgba(255, 122, 0, 0.35);
+  background: rgba(22, 22, 22, 0.85);
+  color: #ffe9b3;
+}
+
+.quiz-option:hover {
+  border-color: rgba(255, 196, 0, 0.65);
+}
+
+.quiz-option-active {
+  border-color: rgba(255, 196, 0, 0.95);
+  box-shadow: 0 0 15px rgba(255, 196, 0, 0.35);
+}
+
 .growth-bar {
   background: linear-gradient(90deg, #ff2a2a, #ff7a00, #ffc400);
   box-shadow: 0 0 10px rgba(255, 122, 0, 0.35);
