@@ -4,6 +4,7 @@ import './globals.css';
 
 const vietnameseFont = Be_Vietnam_Pro({
   subsets: ['latin', 'vietnamese'],
+  weight: ['400', '500', '600', '700', '800'],
   variable: '--font-body'
 });
 
