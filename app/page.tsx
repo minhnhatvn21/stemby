@@ -1,7 +1,23 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { addEnergyPoint, createUserProfile, submitIdea, subscribeLeaderboard, type UserProfile } from '@/lib/game';
+import {
+  addEnergyPoint,
+  contributeTeamMission,
+  createUserProfile,
+  ensureTeamMissions,
+  submitBossAttempt,
+  submitIdea,
+  submitPvpScore,
+  subscribeBossLeaderboard,
+  subscribeLeaderboard,
+  subscribePvpLeaderboard,
+  subscribeTeamMissions,
+  type BossAttempt,
+  type PvpScore,
+  type TeamMission,
+  type UserProfile
+} from '@/lib/game';
 
 type KnowledgeCard = { id: number; text: string; icon: string };
 type ChallengeCard = { id: number; question: string; answer: string[]; correct: string };
@@ -37,7 +53,7 @@ const challengeCards: ChallengeCard[] = [
   }
 ];
 
-const missions: Mission[] = [
+const personalMissions: Mission[] = [
   { id: 1, title: 'Tắt 3 thiết bị điện không cần thiết', reward: 15, note: 'Nhiệm vụ tiết kiệm điện' },
   { id: 2, title: 'Mang bình nước cá nhân đi học', reward: 15, note: 'Nhiệm vụ giảm rác nhựa' },
   { id: 3, title: 'Ghi lại 1 ý tưởng xanh mới', reward: 20, note: 'Nhiệm vụ sáng tạo STEM' }
@@ -50,12 +66,11 @@ const growthMilestones = [
   { min: 220, rank: 'Huyền Thoại Plasma', color: 'text-cyan-300' }
 ];
 
-const interactionIdeas = [
-  '⚔️ PvP 1v1: Hai bạn tranh tài trả lời nhanh 5 câu hỏi AI.',
-  '🤝 Co-op Team: Cả nhóm cùng mở khóa nhiệm vụ trường lớp.',
-  '🔥 Boss tuần: Vượt chuỗi thử thách môi trường để nhận huy hiệu.',
-  '🎁 Vòng quay xanh: Đổi điểm lấy thẻ buff nhân đôi năng lượng.',
-  '🛰️ Radar nhiệm vụ: Hiển thị tiến độ lớp theo thời gian thực.'
+const spinRewards = [
+  { text: '+10 điểm năng lượng', value: 10 },
+  { text: '+20 điểm năng lượng', value: 20 },
+  { text: '+30 điểm năng lượng', value: 30 },
+  { text: 'Không trúng, thử lại lần sau', value: 0 }
 ];
 
 export default function HomePage() {
@@ -65,11 +80,15 @@ export default function HomePage() {
   const [energy, setEnergy] = useState(0);
   const [knowledgeIndex, setKnowledgeIndex] = useState(0);
   const [leaderboard, setLeaderboard] = useState<UserProfile[]>([]);
+  const [teamMissions, setTeamMissions] = useState<TeamMission[]>([]);
+  const [bossBoard, setBossBoard] = useState<BossAttempt[]>([]);
+  const [pvpBoard, setPvpBoard] = useState<PvpScore[]>([]);
 
   const [gocRe, setGocRe] = useState('');
   const [thanCay, setThanCay] = useState('');
   const [tanCay, setTanCay] = useState('');
   const [missionStatus, setMissionStatus] = useState<Record<number, boolean>>({});
+  const [teamMissionMessage, setTeamMissionMessage] = useState('');
 
   const [quizTopic, setQuizTopic] = useState('Tiết kiệm điện trong gia đình');
   const [quizLevel, setQuizLevel] = useState<'de' | 'trung_binh' | 'kho'>('de');
@@ -79,6 +98,15 @@ export default function HomePage() {
   const [quizIndex, setQuizIndex] = useState(0);
   const [quizScore, setQuizScore] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [pvpSubmitted, setPvpSubmitted] = useState(false);
+
+  const [bossChecklist, setBossChecklist] = useState({
+    task1: false,
+    task2: false,
+    task3: false
+  });
+
+  const [spinResult, setSpinResult] = useState('Chưa quay vòng quay');
 
   const currentKnowledge = useMemo(() => knowledgeCards[knowledgeIndex], [knowledgeIndex]);
   const challenge = challengeCards[knowledgeIndex % challengeCards.length];
@@ -91,6 +119,13 @@ export default function HomePage() {
     const progress = next ? Math.min(100, Math.round((energy / next.min) * 100)) : 100;
     return { current, next, progress };
   }, [energy]);
+
+  const radarSummary = useMemo(() => {
+    const done = teamMissions.reduce((sum, item) => sum + Math.min(item.progress, item.target), 0);
+    const target = teamMissions.reduce((sum, item) => sum + item.target, 0);
+    const percent = target ? Math.round((done / target) * 100) : 0;
+    return { done, target, percent };
+  }, [teamMissions]);
 
   useEffect(() => {
     const savedId = localStorage.getItem('arena_user_id');
@@ -116,8 +151,19 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    const unsub = subscribeLeaderboard(setLeaderboard);
-    return () => unsub();
+    ensureTeamMissions().catch(() => undefined);
+
+    const unsubUsers = subscribeLeaderboard(setLeaderboard);
+    const unsubTeamMissions = subscribeTeamMissions(setTeamMissions);
+    const unsubBoss = subscribeBossLeaderboard(setBossBoard);
+    const unsubPvp = subscribePvpLeaderboard(setPvpBoard);
+
+    return () => {
+      unsubUsers();
+      unsubTeamMissions();
+      unsubBoss();
+      unsubPvp();
+    };
   }, []);
 
   const celebrate = () => {
@@ -191,6 +237,26 @@ export default function HomePage() {
     await updateEnergy(mission.reward);
   };
 
+  const onContributeTeamMission = async (mission: TeamMission) => {
+    if (!userId) {
+      setTeamMissionMessage('⚠️ Hãy đăng nhập để tham gia nhiệm vụ lớp.');
+      return;
+    }
+
+    const success = await contributeTeamMission(userId, nickname, mission);
+    if (success) {
+      setTeamMissionMessage(`✅ Bạn đã đóng góp cho nhiệm vụ: ${mission.title}.`);
+      setEnergy((prev) => {
+        const next = prev + mission.reward;
+        localStorage.setItem('arena_energy', String(next));
+        return next;
+      });
+      celebrate();
+    } else {
+      setTeamMissionMessage('ℹ️ Bạn đã đóng góp nhiệm vụ này rồi, hãy hỗ trợ nhiệm vụ khác nhé!');
+    }
+  };
+
   const generateAIQuiz = async () => {
     setQuizLoading(true);
     setQuizError('');
@@ -198,16 +264,13 @@ export default function HomePage() {
     setQuizScore(0);
     setQuizIndex(0);
     setSelectedOption(null);
+    setPvpSubmitted(false);
 
     try {
       const response = await fetch('/api/quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: quizTopic,
-          level: quizLevel,
-          count: 5
-        })
+        body: JSON.stringify({ topic: quizTopic, level: quizLevel, count: 5 })
       });
 
       const data = (await response.json()) as { questions?: AIQuizQuestion[]; error?: string };
@@ -243,6 +306,30 @@ export default function HomePage() {
     }
   };
 
+  const submitPvpFromQuiz = async () => {
+    if (!userId || !quizFinished || pvpSubmitted) return;
+    await submitPvpScore(userId, nickname, quizScore);
+    setPvpSubmitted(true);
+    await updateEnergy(10);
+  };
+
+  const submitBossChallenge = async () => {
+    if (!userId) return;
+    const score = [bossChecklist.task1, bossChecklist.task2, bossChecklist.task3].filter(Boolean).length * 35;
+    await submitBossAttempt(userId, nickname, score);
+    alert(score >= 80 ? 'Bạn đã vượt Boss tuần và nhận thưởng!' : 'Bạn đã gửi thử thách Boss tuần. Hãy cố thêm nhé!');
+    setBossChecklist({ task1: false, task2: false, task3: false });
+  };
+
+  const spinGreenWheel = async () => {
+    if (!userId) return;
+    const result = spinRewards[Math.floor(Math.random() * spinRewards.length)];
+    setSpinResult(result.text);
+    if (result.value > 0) {
+      await updateEnergy(result.value);
+    }
+  };
+
   return (
     <main className="relative mx-auto min-h-screen max-w-7xl px-4 pb-10 pt-6 md:px-8">
       <div className="fire-background" aria-hidden>
@@ -268,8 +355,8 @@ export default function HomePage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="molten-title text-3xl md:text-5xl">Arena Năng Lượng Xanh</h1>
           <nav className="flex gap-2 text-sm md:text-base">
-            <button className="energy-button px-3 py-2">Nhiệm vụ</button>
-            <button className="energy-button px-3 py-2">Mô hình tăng trưởng</button>
+            <button className="energy-button px-3 py-2">Nhiệm vụ lớp</button>
+            <button className="energy-button px-3 py-2">Đấu trường AI</button>
             <button className="energy-button px-3 py-2">Bảng xếp hạng</button>
           </nav>
         </div>
@@ -292,96 +379,12 @@ export default function HomePage() {
         ))}
       </section>
 
-      <section className="mb-6 grid gap-4 lg:grid-cols-2">
-        <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">💡 Ý Tưởng Tương Tác Nâng Cao</h3>
-          <p className="mt-1 text-sm text-orange-100">Các ý tưởng này bạn có thể bật/tắt thành module mới khi phát triển phiên bản tiếp theo.</p>
-          <ul className="mt-4 space-y-2">
-            {interactionIdeas.map((idea) => (
-              <li key={idea} className="idea-chip rounded-md px-3 py-2 text-sm text-orange-100">
-                {idea}
-              </li>
-            ))}
-          </ul>
-        </article>
-
-        <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">🤖 AI Quiz Generator</h3>
-          <p className="mt-1 text-sm text-orange-100">Nhập chủ đề, hệ thống sẽ tạo câu hỏi trắc nghiệm để học sinh tương tác trực tiếp.</p>
-          <div className="mt-3 grid gap-2 md:grid-cols-3">
-            <input
-              value={quizTopic}
-              onChange={(event) => setQuizTopic(event.target.value)}
-              className="fire-input col-span-2 p-2"
-              placeholder="Ví dụ: Tiết kiệm nước ở trường"
-            />
-            <select value={quizLevel} onChange={(event) => setQuizLevel(event.target.value as 'de' | 'trung_binh' | 'kho')} className="fire-input p-2">
-              <option value="de">Dễ</option>
-              <option value="trung_binh">Trung bình</option>
-              <option value="kho">Khó</option>
-            </select>
-          </div>
-          <button disabled={quizLoading} onClick={generateAIQuiz} className="energy-button mt-3 w-full p-3 disabled:opacity-60">
-            {quizLoading ? 'Đang tạo bộ câu hỏi...' : 'Tạo 5 câu hỏi bằng AI'}
-          </button>
-          {quizError ? <p className="mt-2 text-sm text-red-300">{quizError}</p> : null}
-
-          {currentQuiz ? (
-            <div className="quiz-panel mt-4 rounded-md p-3">
-              <p className="text-sm text-orange-200">Câu {quizIndex + 1}/{quizQuestions.length}</p>
-              <h4 className="mt-1 text-lg font-bold text-yellow-100">{currentQuiz.question}</h4>
-              <div className="mt-3 space-y-2">
-                {currentQuiz.options.map((option, index) => (
-                  <button
-                    key={`${option}-${index}`}
-                    onClick={() => setSelectedOption(index)}
-                    className={`quiz-option w-full rounded-md p-2 text-left ${selectedOption === index ? 'quiz-option-active' : ''}`}
-                  >
-                    {String.fromCharCode(65 + index)}. {option}
-                  </button>
-                ))}
-              </div>
-              <button onClick={submitQuizAnswer} disabled={selectedOption === null} className="energy-button mt-3 w-full p-2 disabled:opacity-60">
-                Xác nhận đáp án
-              </button>
-            </div>
-          ) : null}
-
-          {quizFinished ? (
-            <div className="quiz-panel mt-4 rounded-md p-3 text-center">
-              <p className="text-sm text-orange-200">Bạn đã hoàn thành bài AI Quiz!</p>
-              <p className="mt-1 text-2xl font-black text-yellow-300">Điểm đúng: {quizScore}/5</p>
-              <p className="mt-1 text-xs text-orange-200">Thưởng thêm +20 điểm nếu đạt từ 4/5 câu đúng.</p>
-              <button onClick={finishBonus} className="energy-button mt-3 w-full p-2">
-                Nhận thưởng hoàn thành
-              </button>
-            </div>
-          ) : null}
-        </article>
-      </section>
-
-      <section className="fire-shell mb-6 rounded-xl px-5 py-7 text-center md:py-10">
-        <p className="mb-2 text-xs uppercase tracking-[0.25em] text-yellow-300">Boss Fight Theme</p>
-        <h2 className="molten-title text-4xl md:text-6xl">Kích hoạt chế độ chiến binh</h2>
-        <p className="flicker mx-auto mt-3 max-w-3xl text-base text-orange-100 md:text-lg">
-          Học kiến thức xanh, vượt thử thách sinh tồn và vươn lên top 5 với nguồn năng lượng plasma rực cháy.
-        </p>
-        <div className="mt-5">
-          <button className="energy-button px-6 py-3 text-lg">Nạp năng lượng ngay</button>
-        </div>
-      </section>
-
       {!userId ? (
         <section className="fire-card mb-6 rounded-lg p-5 md:p-6">
           <h2 className="text-2xl font-black text-yellow-300">1) Khởi tạo hồ sơ Chiến Binh</h2>
           <p className="mt-1 text-sm text-orange-100">Nhập tên và chọn avatar để tạo tài khoản trong Firestore.</p>
           <div className="mt-4 flex flex-col gap-3 md:flex-row">
-            <input
-              className="fire-input p-3 md:flex-1"
-              placeholder="Nhập Tên Chiến Binh"
-              value={nickname}
-              onChange={(event) => setNickname(event.target.value)}
-            />
+            <input className="fire-input p-3 md:flex-1" placeholder="Nhập Tên Chiến Binh" value={nickname} onChange={(event) => setNickname(event.target.value)} />
             <select className="fire-input p-3" value={avatar} onChange={(event) => setAvatar(event.target.value)}>
               {avatars.map((item) => (
                 <option key={item} value={item}>
@@ -413,25 +416,158 @@ export default function HomePage() {
         </section>
       )}
 
+      <section className="mb-6 grid gap-4 xl:grid-cols-3">
+        <article className="fire-card rounded-lg p-5 xl:col-span-2">
+          <h3 className="text-xl font-black text-yellow-300">🤝 Co-op Team: Nhiệm vụ lớp thời gian thực</h3>
+          <p className="mt-1 text-sm text-orange-100">Mọi người cùng tham gia để tăng tiến độ nhiệm vụ chung. Mỗi bạn chỉ đóng góp 1 lần / nhiệm vụ.</p>
+          <div className="mt-4 space-y-3">
+            {teamMissions.map((mission) => {
+              const percent = Math.min(100, Math.round((mission.progress / mission.target) * 100));
+              return (
+                <div key={mission.id} className="team-mission-card rounded-md p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <strong className="text-yellow-100">{mission.title}</strong>
+                    <span className="text-xs text-orange-200">
+                      {mission.progress}/{mission.target} ({percent}%)
+                    </span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded bg-slate-800">
+                    <div className="growth-bar h-full" style={{ width: `${percent}%` }} />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="text-xs text-orange-200">Đã tham gia: {mission.participantsCount} bạn</span>
+                    <button onClick={() => onContributeTeamMission(mission)} className="energy-button px-3 py-1 text-sm">
+                      Đóng góp (+{mission.reward})
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {teamMissionMessage ? <p className="mt-3 text-sm text-yellow-200">{teamMissionMessage}</p> : null}
+        </article>
+
+        <article className="fire-card rounded-lg p-5">
+          <h3 className="text-xl font-black text-yellow-300">🛰️ Radar nhiệm vụ</h3>
+          <p className="mt-1 text-sm text-orange-100">Bảng radar cho biết cả lớp đang hoàn thành nhiệm vụ tới đâu.</p>
+          <div className="mt-4 rounded-md border border-orange-500/30 bg-black/35 p-3">
+            <p className="text-xs uppercase text-orange-300">Tiến độ lớp</p>
+            <p className="mt-1 text-2xl font-black text-yellow-200">{radarSummary.percent}%</p>
+            <p className="text-sm text-orange-200">
+              {radarSummary.done}/{radarSummary.target} lượt đóng góp
+            </p>
+          </div>
+          <ul className="mt-3 space-y-2 text-sm text-orange-100">
+            <li>👥 Số chiến binh đang có điểm: {leaderboard.length}</li>
+            <li>🔥 Top 1 hiện tại: {leaderboard[0]?.nickname ?? 'Chưa có dữ liệu'}</li>
+            <li>⚡ Tổng điểm top 5: {leaderboard.slice(0, 5).reduce((sum, item) => sum + item.diem_nang_luong, 0)}</li>
+          </ul>
+        </article>
+      </section>
+
+      <section className="mb-6 grid gap-4 xl:grid-cols-3">
+        <article className="fire-card rounded-lg p-5">
+          <h3 className="text-xl font-black text-yellow-300">🤖 PvP 1v1 AI Sprint</h3>
+          <p className="mt-1 text-sm text-orange-100">Làm bài quiz AI và gửi điểm lên bảng PvP để cạnh tranh với mọi người.</p>
+          {quizFinished ? (
+            <button onClick={submitPvpFromQuiz} disabled={pvpSubmitted} className="energy-button mt-3 w-full p-2 disabled:opacity-60">
+              {pvpSubmitted ? 'Đã gửi điểm PvP' : `Gửi điểm PvP: ${quizScore}/5 (+10 điểm)`}
+            </button>
+          ) : (
+            <p className="mt-3 text-sm text-orange-200">Hoàn thành AI Quiz để mở khoá nút gửi PvP.</p>
+          )}
+          <ol className="mt-3 space-y-2 text-sm">
+            {pvpBoard.map((item, index) => (
+              <li key={item.id} className="rounded border border-cyan-500/30 bg-cyan-900/10 px-2 py-1 text-cyan-100">
+                {index + 1}. {item.userName} - {item.score}/5
+              </li>
+            ))}
+          </ol>
+        </article>
+
+        <article className="fire-card rounded-lg p-5">
+          <h3 className="text-xl font-black text-yellow-300">🔥 Boss Tuần</h3>
+          <p className="mt-1 text-sm text-orange-100">Hoàn thành 3 thử thách môi trường. Từ 80 điểm sẽ nhận huy hiệu + thưởng.</p>
+          <div className="mt-3 space-y-2 text-sm text-orange-100">
+            <label className="boss-check flex items-center gap-2 rounded-md px-2 py-2">
+              <input type="checkbox" checked={bossChecklist.task1} onChange={(event) => setBossChecklist((prev) => ({ ...prev, task1: event.target.checked }))} />
+              Tắt điện trước khi rời lớp
+            </label>
+            <label className="boss-check flex items-center gap-2 rounded-md px-2 py-2">
+              <input type="checkbox" checked={bossChecklist.task2} onChange={(event) => setBossChecklist((prev) => ({ ...prev, task2: event.target.checked }))} />
+              Phân loại rác đúng 3 nhóm
+            </label>
+            <label className="boss-check flex items-center gap-2 rounded-md px-2 py-2">
+              <input type="checkbox" checked={bossChecklist.task3} onChange={(event) => setBossChecklist((prev) => ({ ...prev, task3: event.target.checked }))} />
+              Chia sẻ 1 ý tưởng xanh cho lớp
+            </label>
+          </div>
+          <button onClick={submitBossChallenge} className="energy-button mt-3 w-full p-2">
+            Gửi thử thách Boss tuần
+          </button>
+          <ol className="mt-3 space-y-2 text-sm">
+            {bossBoard.map((item, index) => (
+              <li key={item.id} className="rounded border border-orange-500/30 bg-orange-900/10 px-2 py-1 text-orange-100">
+                {index + 1}. {item.userName} - {item.score} điểm
+              </li>
+            ))}
+          </ol>
+        </article>
+
+        <article className="fire-card rounded-lg p-5">
+          <h3 className="text-xl font-black text-yellow-300">🎁 Vòng quay xanh</h3>
+          <p className="mt-1 text-sm text-orange-100">Dùng để tăng hứng thú: quay mỗi lượt để nhận thưởng ngẫu nhiên.</p>
+          <button onClick={spinGreenWheel} className="energy-button mt-3 w-full p-3">
+            Quay ngay
+          </button>
+          <p className="mt-3 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2 text-sm text-yellow-200">Kết quả: {spinResult}</p>
+        </article>
+      </section>
+
       <section className="mb-6 grid gap-4 lg:grid-cols-2">
         <article className="fire-card rounded-lg p-5">
-          <h3 className="text-xl font-black text-yellow-300">🎯 Module Nhiệm Vụ Hằng Ngày</h3>
-          <p className="mt-2 text-sm text-orange-100">Hoàn thành nhiệm vụ để mở khoá thêm điểm năng lượng mỗi ngày.</p>
-          <div className="mt-4 space-y-3">
-            {missions.map((mission) => (
-              <button
-                key={mission.id}
-                onClick={() => onCompleteMission(mission)}
-                className="mission-row flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left"
-              >
-                <div>
-                  <p className="font-semibold text-yellow-100">{mission.title}</p>
-                  <p className="text-xs text-orange-200">{mission.note}</p>
-                </div>
-                <strong className="text-sm text-yellow-300">{missionStatus[mission.id] ? 'Đã xong ✅' : `+${mission.reward}`}</strong>
-              </button>
-            ))}
+          <h3 className="text-xl font-black text-yellow-300">🤖 AI Quiz Generator</h3>
+          <p className="mt-1 text-sm text-orange-100">Nhập chủ đề, hệ thống sẽ tạo câu hỏi trắc nghiệm để học sinh tương tác trực tiếp.</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            <input value={quizTopic} onChange={(event) => setQuizTopic(event.target.value)} className="fire-input col-span-2 p-2" placeholder="Ví dụ: Tiết kiệm nước ở trường" />
+            <select value={quizLevel} onChange={(event) => setQuizLevel(event.target.value as 'de' | 'trung_binh' | 'kho')} className="fire-input p-2">
+              <option value="de">Dễ</option>
+              <option value="trung_binh">Trung bình</option>
+              <option value="kho">Khó</option>
+            </select>
           </div>
+          <button disabled={quizLoading} onClick={generateAIQuiz} className="energy-button mt-3 w-full p-3 disabled:opacity-60">
+            {quizLoading ? 'Đang tạo bộ câu hỏi...' : 'Tạo 5 câu hỏi bằng AI'}
+          </button>
+          {quizError ? <p className="mt-2 text-sm text-red-300">{quizError}</p> : null}
+
+          {currentQuiz ? (
+            <div className="quiz-panel mt-4 rounded-md p-3">
+              <p className="text-sm text-orange-200">Câu {quizIndex + 1}/{quizQuestions.length}</p>
+              <h4 className="mt-1 text-lg font-bold text-yellow-100">{currentQuiz.question}</h4>
+              <div className="mt-3 space-y-2">
+                {currentQuiz.options.map((option, index) => (
+                  <button key={`${option}-${index}`} onClick={() => setSelectedOption(index)} className={`quiz-option w-full rounded-md p-2 text-left ${selectedOption === index ? 'quiz-option-active' : ''}`}>
+                    {String.fromCharCode(65 + index)}. {option}
+                  </button>
+                ))}
+              </div>
+              <button onClick={submitQuizAnswer} disabled={selectedOption === null} className="energy-button mt-3 w-full p-2 disabled:opacity-60">
+                Xác nhận đáp án
+              </button>
+            </div>
+          ) : null}
+
+          {quizFinished ? (
+            <div className="quiz-panel mt-4 rounded-md p-3 text-center">
+              <p className="text-sm text-orange-200">Bạn đã hoàn thành bài AI Quiz!</p>
+              <p className="mt-1 text-2xl font-black text-yellow-300">Điểm đúng: {quizScore}/5</p>
+              <p className="mt-1 text-xs text-orange-200">Thưởng thêm +20 điểm nếu đạt từ 4/5 câu đúng.</p>
+              <button onClick={finishBonus} className="energy-button mt-3 w-full p-2">
+                Nhận thưởng hoàn thành
+              </button>
+            </div>
+          ) : null}
         </article>
 
         <article className="fire-card rounded-lg p-5">
@@ -453,6 +589,19 @@ export default function HomePage() {
               </li>
             ))}
           </ul>
+
+          <h4 className="mt-4 text-lg font-black text-yellow-200">🎯 Nhiệm vụ cá nhân</h4>
+          <div className="mt-2 space-y-2">
+            {personalMissions.map((mission) => (
+              <button key={mission.id} onClick={() => onCompleteMission(mission)} className="mission-row flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left">
+                <div>
+                  <p className="font-semibold text-yellow-100">{mission.title}</p>
+                  <p className="text-xs text-orange-200">{mission.note}</p>
+                </div>
+                <strong className="text-sm text-yellow-300">{missionStatus[mission.id] ? 'Đã xong ✅' : `+${mission.reward}`}</strong>
+              </button>
+            ))}
+          </div>
         </article>
       </section>
 
@@ -481,24 +630,9 @@ export default function HomePage() {
 
         <article className="fire-card rounded-lg p-5">
           <h3 className="text-xl font-black text-yellow-300">🌳 Thẻ 3: Xưởng Sáng Chế</h3>
-          <input
-            className="fire-input mt-2 w-full p-2"
-            placeholder="Gốc rễ (Vấn đề)"
-            value={gocRe}
-            onChange={(event) => setGocRe(event.target.value)}
-          />
-          <input
-            className="fire-input mt-2 w-full p-2"
-            placeholder="Thân cây (Nguyên nhân)"
-            value={thanCay}
-            onChange={(event) => setThanCay(event.target.value)}
-          />
-          <input
-            className="fire-input mt-2 w-full p-2"
-            placeholder="Tán cây (Giải pháp)"
-            value={tanCay}
-            onChange={(event) => setTanCay(event.target.value)}
-          />
+          <input className="fire-input mt-2 w-full p-2" placeholder="Gốc rễ (Vấn đề)" value={gocRe} onChange={(event) => setGocRe(event.target.value)} />
+          <input className="fire-input mt-2 w-full p-2" placeholder="Thân cây (Nguyên nhân)" value={thanCay} onChange={(event) => setThanCay(event.target.value)} />
+          <input className="fire-input mt-2 w-full p-2" placeholder="Tán cây (Giải pháp)" value={tanCay} onChange={(event) => setTanCay(event.target.value)} />
           <button onClick={onSubmitIdea} className="energy-button mt-3 w-full p-3">
             Gửi ý tưởng (+50 điểm)
           </button>
