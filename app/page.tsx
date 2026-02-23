@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   addEnergyPoint,
   contributeTeamMission,
-  createUserProfile,
+  loginStudentAccount,
+  registerStudentAccount,
   ensureTeamMissions,
   submitBossAttempt,
   submitIdea,
@@ -31,6 +32,7 @@ type AIQuizQuestion = {
 };
 type Notice = { id: number; title: string; message: string; type: 'success' | 'warn' | 'info' };
 type DailyQuizState = { date: string; levelsUsed: Record<AIQuizLevel, boolean>; streak: number };
+type AuthMode = 'login' | 'register';
 
 const avatars = ['🦸', '🌱', '⚡', '🌍', '💧', '☀️'];
 
@@ -104,6 +106,13 @@ function levelLabel(level: AIQuizLevel) {
 export default function HomePage() {
   const [nickname, setNickname] = useState('');
   const [avatar, setAvatar] = useState(avatars[0]);
+  const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [className, setClassName] = useState('');
+  const [schoolName, setSchoolName] = useState('');
+  const [province, setProvince] = useState('');
   const [userId, setUserId] = useState('');
   const [energy, setEnergy] = useState(0);
   const [knowledgeIndex, setKnowledgeIndex] = useState(0);
@@ -171,16 +180,26 @@ export default function HomePage() {
 
   useEffect(() => {
     const savedId = localStorage.getItem('arena_user_id');
+    const savedUsername = localStorage.getItem('arena_username');
     const savedName = localStorage.getItem('arena_nickname');
     const savedAvatar = localStorage.getItem('arena_avatar');
     const savedEnergy = Number(localStorage.getItem('arena_energy') ?? '0');
+    const savedFullName = localStorage.getItem('arena_full_name') ?? '';
+    const savedClassName = localStorage.getItem('arena_class_name') ?? '';
+    const savedSchoolName = localStorage.getItem('arena_school_name') ?? '';
+    const savedProvince = localStorage.getItem('arena_province') ?? '';
     const savedMissions = localStorage.getItem('arena_missions');
 
     if (savedId && savedName && savedAvatar) {
       setUserId(savedId);
+      setUsername(savedUsername ?? '');
       setNickname(savedName);
       setAvatar(savedAvatar);
       setEnergy(savedEnergy);
+      setFullName(savedFullName);
+      setClassName(savedClassName);
+      setSchoolName(savedSchoolName);
+      setProvince(savedProvince);
 
       const rawDaily = localStorage.getItem(`arena_daily_quiz_${savedId}`);
       if (rawDaily) {
@@ -233,34 +252,103 @@ export default function HomePage() {
     setTimeout(() => confetti.remove(), 900);
   };
 
+  const saveSession = (profile: {
+    id: string;
+    username: string;
+    nickname: string;
+    avatar: string;
+    fullName: string;
+    className: string;
+    schoolName: string;
+    province: string;
+    diem_nang_luong: number;
+  }) => {
+    setUserId(profile.id);
+    setUsername(profile.username);
+    setNickname(profile.nickname);
+    setAvatar(profile.avatar);
+    setFullName(profile.fullName);
+    setClassName(profile.className);
+    setSchoolName(profile.schoolName);
+    setProvince(profile.province);
+    setEnergy(profile.diem_nang_luong);
+
+    localStorage.setItem('arena_user_id', profile.id);
+    localStorage.setItem('arena_username', profile.username);
+    localStorage.setItem('arena_nickname', profile.nickname);
+    localStorage.setItem('arena_avatar', profile.avatar);
+    localStorage.setItem('arena_energy', String(profile.diem_nang_luong));
+    localStorage.setItem('arena_full_name', profile.fullName);
+    localStorage.setItem('arena_class_name', profile.className);
+    localStorage.setItem('arena_school_name', profile.schoolName);
+    localStorage.setItem('arena_province', profile.province);
+  };
+
   const registerPlayer = async () => {
-    if (!nickname.trim()) return;
-    const id = crypto.randomUUID();
-    await createUserProfile({ id, nickname, avatar });
-    setUserId(id);
-    setEnergy(0);
-    const today = todayKey();
-    const initialDaily: DailyQuizState = {
-      date: today,
-      levelsUsed: { de: false, trung_binh: false, kho: false, cuc_kho: false },
-      streak: 0
-    };
-    setDailyQuizState(initialDaily);
-    localStorage.setItem('arena_user_id', id);
-    localStorage.setItem('arena_nickname', nickname);
-    localStorage.setItem('arena_avatar', avatar);
-    localStorage.setItem('arena_energy', '0');
-    localStorage.setItem(`arena_daily_quiz_${id}`, JSON.stringify(initialDaily));
-    pushNotice('Tạo tài khoản thành công', `Chào mừng ${nickname} đến đấu trường năng lượng xanh!`, 'success');
+    if (!username.trim() || !password.trim() || !nickname.trim() || !fullName.trim() || !className.trim() || !schoolName.trim() || !province.trim()) {
+      pushNotice('Thiếu thông tin', 'Vui lòng nhập đầy đủ tài khoản, mật khẩu và hồ sơ học sinh.', 'warn');
+      return;
+    }
+
+    try {
+      const profile = await registerStudentAccount({ username, password, nickname, avatar, fullName, className, schoolName, province });
+      saveSession(profile);
+      const today = todayKey();
+      const initialDaily: DailyQuizState = {
+        date: today,
+        levelsUsed: { de: false, trung_binh: false, kho: false, cuc_kho: false },
+        streak: 0
+      };
+      setDailyQuizState(initialDaily);
+      localStorage.setItem(`arena_daily_quiz_${profile.id}`, JSON.stringify(initialDaily));
+      pushNotice('Tạo tài khoản thành công', `Chào mừng ${profile.nickname} đến đấu trường năng lượng xanh!`, 'success');
+    } catch (error) {
+      pushNotice('Đăng ký thất bại', error instanceof Error ? error.message : 'Không thể đăng ký tài khoản.', 'warn');
+    }
+  };
+
+  const loginPlayer = async () => {
+    if (!username.trim() || !password.trim()) {
+      pushNotice('Thiếu thông tin', 'Vui lòng nhập tài khoản và mật khẩu.', 'warn');
+      return;
+    }
+
+    try {
+      const profile = await loginStudentAccount(username.trim(), password);
+      saveSession(profile);
+      const rawDaily = localStorage.getItem(`arena_daily_quiz_${profile.id}`);
+      if (rawDaily) {
+        try {
+          const parsed = JSON.parse(rawDaily) as DailyQuizState;
+          setDailyQuizState(parsed.date === todayKey() ? parsed : { date: todayKey(), levelsUsed: { de: false, trung_binh: false, kho: false, cuc_kho: false }, streak: 0 });
+        } catch {
+          setDailyQuizState({ date: todayKey(), levelsUsed: { de: false, trung_binh: false, kho: false, cuc_kho: false }, streak: 0 });
+        }
+      }
+      pushNotice('Đăng nhập thành công', `Xin chào ${profile.nickname}!`, 'success');
+    } catch (error) {
+      pushNotice('Đăng nhập thất bại', error instanceof Error ? error.message : 'Không thể đăng nhập.', 'warn');
+    }
   };
 
   const logoutPlayer = () => {
     localStorage.removeItem('arena_user_id');
+    localStorage.removeItem('arena_username');
     localStorage.removeItem('arena_nickname');
     localStorage.removeItem('arena_avatar');
     localStorage.removeItem('arena_energy');
+    localStorage.removeItem('arena_full_name');
+    localStorage.removeItem('arena_class_name');
+    localStorage.removeItem('arena_school_name');
+    localStorage.removeItem('arena_province');
     setUserId('');
+    setUsername('');
+    setPassword('');
     setNickname('');
+    setFullName('');
+    setClassName('');
+    setSchoolName('');
+    setProvince('');
     setEnergy(0);
     setQuizQuestions([]);
     setQuizIndex(0);
@@ -519,20 +607,46 @@ export default function HomePage() {
 
       {!userId ? (
         <section className="fire-card mb-6 rounded-lg p-5 md:p-6">
-          <h2 className="text-2xl font-black text-emerald-200">🔐 Đăng ký tài khoản chiến binh</h2>
-          <p className="mt-1 text-sm text-emerald-100">Mỗi học sinh dùng 1 tài khoản để lưu điểm và giới hạn nhiệm vụ theo ngày.</p>
-          <div className="mt-4 flex flex-col gap-3 md:flex-row">
-            <input className="fire-input p-3 md:flex-1" placeholder="Nhập Tên Chiến Binh" value={nickname} onChange={(event) => setNickname(event.target.value)} />
-            <select className="fire-input p-3" value={avatar} onChange={(event) => setAvatar(event.target.value)}>
-              {avatars.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-            <button onClick={registerPlayer} className="energy-button px-5 py-3">
-              Tạo tài khoản
+          <h2 className="text-2xl font-black text-emerald-200">🔐 Tài khoản học sinh</h2>
+          <p className="mt-1 text-sm text-emerald-100">Nếu chưa có tài khoản, hãy đăng ký đầy đủ hồ sơ học sinh. Nếu đã có, đăng nhập để tiếp tục.</p>
+
+          <div className="mt-3 flex gap-2">
+            <button className={`energy-button px-3 py-2 ${authMode === 'login' ? '' : 'opacity-70'}`} onClick={() => setAuthMode('login')}>
+              Đăng nhập
             </button>
+            <button className={`energy-button px-3 py-2 ${authMode === 'register' ? '' : 'opacity-70'}`} onClick={() => setAuthMode('register')}>
+              Đăng ký
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <input className="fire-input p-3" placeholder="Tài khoản đăng nhập" value={username} onChange={(event) => setUsername(event.target.value)} />
+            <input type="password" className="fire-input p-3" placeholder="Mật khẩu" value={password} onChange={(event) => setPassword(event.target.value)} />
+
+            {authMode === 'register' ? (
+              <>
+                <input className="fire-input p-3" placeholder="Biệt danh hiển thị" value={nickname} onChange={(event) => setNickname(event.target.value)} />
+                <select className="fire-input p-3" value={avatar} onChange={(event) => setAvatar(event.target.value)}>
+                  {avatars.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+                <input className="fire-input p-3" placeholder="Họ và tên" value={fullName} onChange={(event) => setFullName(event.target.value)} />
+                <input className="fire-input p-3" placeholder="Lớp học (VD: 5A)" value={className} onChange={(event) => setClassName(event.target.value)} />
+                <input className="fire-input p-3" placeholder="Trường học" value={schoolName} onChange={(event) => setSchoolName(event.target.value)} />
+                <input className="fire-input p-3" placeholder="Tỉnh/Thành" value={province} onChange={(event) => setProvince(event.target.value)} />
+              </>
+            ) : null}
+          </div>
+
+          <div className="mt-4">
+            {authMode === 'register' ? (
+              <button onClick={registerPlayer} className="energy-button px-5 py-3">Tạo tài khoản mới</button>
+            ) : (
+              <button onClick={loginPlayer} className="energy-button px-5 py-3">Đăng nhập</button>
+            )}
           </div>
         </section>
       ) : (
@@ -542,6 +656,8 @@ export default function HomePage() {
             <p className="mt-1 text-2xl font-black text-lime-200">
               {avatar} {nickname}
             </p>
+            <p className="mt-1 text-xs text-emerald-100">{fullName} • {className}</p>
+            <p className="text-xs text-emerald-200">{schoolName} - {province}</p>
           </div>
           <div className="fire-card rounded-lg p-4">
             <p className="text-xs uppercase text-emerald-200">Điểm năng lượng</p>

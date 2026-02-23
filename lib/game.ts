@@ -12,15 +12,32 @@ import {
   query,
   setDoc,
   updateDoc,
+  where,
   type Unsubscribe
 } from 'firebase/firestore';
 import { db } from './firebase';
 
 export type UserProfile = {
   id: string;
+  username: string;
   nickname: string;
   avatar: string;
+  fullName: string;
+  className: string;
+  schoolName: string;
+  province: string;
   diem_nang_luong: number;
+};
+
+export type RegisterPayload = {
+  username: string;
+  password: string;
+  nickname: string;
+  avatar: string;
+  fullName: string;
+  className: string;
+  schoolName: string;
+  province: string;
 };
 
 export type IdeaPayload = {
@@ -59,15 +76,67 @@ const defaultTeamMissions: Array<Omit<TeamMission, 'participantsCount' | 'progre
   { id: 'green-idea', title: 'Mỗi bạn nộp 1 ý tưởng xanh', target: 15, reward: 15 }
 ];
 
-// Tạo hồ sơ mới cho người chơi.
-export async function createUserProfile(profile: Omit<UserProfile, 'diem_nang_luong'>) {
-  await setDoc(doc(db, 'users', profile.id), {
-    nickname: profile.nickname,
-    avatar: profile.avatar,
+// Đăng ký tài khoản mới theo username/password.
+export async function registerStudentAccount(payload: RegisterPayload): Promise<UserProfile> {
+  const existing = await getDocs(query(collection(db, 'users'), where('username', '==', payload.username), limit(1)));
+  if (!existing.empty) {
+    throw new Error('Tên đăng nhập đã tồn tại. Vui lòng chọn tên khác.');
+  }
+
+  const id = crypto.randomUUID();
+  const profile: Omit<UserProfile, 'id'> & { password: string; badges: string[]; updatedAt: number } = {
+    username: payload.username,
+    password: payload.password,
+    nickname: payload.nickname,
+    avatar: payload.avatar,
+    fullName: payload.fullName,
+    className: payload.className,
+    schoolName: payload.schoolName,
+    province: payload.province,
     diem_nang_luong: 0,
     badges: [],
     updatedAt: Date.now()
-  });
+  };
+
+  await setDoc(doc(db, 'users', id), profile);
+
+  return {
+    id,
+    username: profile.username,
+    nickname: profile.nickname,
+    avatar: profile.avatar,
+    fullName: profile.fullName,
+    className: profile.className,
+    schoolName: profile.schoolName,
+    province: profile.province,
+    diem_nang_luong: 0
+  };
+}
+
+// Đăng nhập bằng username/password.
+export async function loginStudentAccount(username: string, password: string): Promise<UserProfile> {
+  const found = await getDocs(
+    query(collection(db, 'users'), where('username', '==', username), where('password', '==', password), limit(1))
+  );
+
+  if (found.empty) {
+    throw new Error('Sai tài khoản hoặc mật khẩu.');
+  }
+
+  const docData = found.docs[0];
+  const data = docData.data();
+
+  return {
+    id: docData.id,
+    username: data.username ?? username,
+    nickname: data.nickname ?? 'Chiến binh',
+    avatar: data.avatar ?? '🌱',
+    fullName: data.fullName ?? '',
+    className: data.className ?? '',
+    schoolName: data.schoolName ?? '',
+    province: data.province ?? '',
+    diem_nang_luong: data.diem_nang_luong ?? 0
+  };
 }
 
 // Cộng điểm năng lượng cho người chơi.
@@ -78,7 +147,6 @@ export async function addEnergyPoint(userId: string, value: number) {
   });
 }
 
-// Lưu ý tưởng của mô hình cây vấn đề.
 export async function submitIdea(payload: IdeaPayload) {
   await addDoc(collection(db, 'ideas'), {
     ...payload,
@@ -86,15 +154,19 @@ export async function submitIdea(payload: IdeaPayload) {
   });
 }
 
-// Lắng nghe bảng xếp hạng realtime.
 export function subscribeLeaderboard(onData: (users: UserProfile[]) => void): Unsubscribe {
   const usersQuery = query(collection(db, 'users'), orderBy('diem_nang_luong', 'desc'));
 
   return onSnapshot(usersQuery, (snapshot) => {
     const users = snapshot.docs.map((item) => ({
       id: item.id,
+      username: item.data().username ?? '',
       nickname: item.data().nickname ?? 'Chiến binh',
       avatar: item.data().avatar ?? '🌱',
+      fullName: item.data().fullName ?? '',
+      className: item.data().className ?? '',
+      schoolName: item.data().schoolName ?? '',
+      province: item.data().province ?? '',
       diem_nang_luong: item.data().diem_nang_luong ?? 0
     }));
 
@@ -102,7 +174,6 @@ export function subscribeLeaderboard(onData: (users: UserProfile[]) => void): Un
   });
 }
 
-// Khởi tạo nhiệm vụ chung cho lớp nếu chưa có dữ liệu.
 export async function ensureTeamMissions() {
   const snap = await getDocs(query(collection(db, 'team_missions'), limit(1)));
   if (!snap.empty) return;
@@ -119,7 +190,6 @@ export async function ensureTeamMissions() {
   );
 }
 
-// Lắng nghe danh sách nhiệm vụ chung realtime.
 export function subscribeTeamMissions(onData: (missions: TeamMission[]) => void): Unsubscribe {
   const missionQuery = query(collection(db, 'team_missions'), orderBy('updatedAt', 'desc'));
   return onSnapshot(missionQuery, (snapshot) => {
@@ -135,7 +205,6 @@ export function subscribeTeamMissions(onData: (missions: TeamMission[]) => void)
   });
 }
 
-// Người chơi tham gia nhiệm vụ chung (mỗi người chỉ tính 1 lần / nhiệm vụ).
 export async function contributeTeamMission(userId: string, userName: string, mission: TeamMission): Promise<boolean> {
   const logRef = doc(db, 'team_mission_logs', `${mission.id}_${userId}`);
   const logSnap = await getDoc(logRef);
@@ -159,7 +228,6 @@ export async function contributeTeamMission(userId: string, userName: string, mi
   return true;
 }
 
-// Gửi điểm thử thách boss tuần.
 export async function submitBossAttempt(userId: string, userName: string, score: number) {
   await addDoc(collection(db, 'boss_attempts'), {
     userId,
@@ -177,7 +245,6 @@ export async function submitBossAttempt(userId: string, userName: string, score:
   }
 }
 
-// Lắng nghe top boss tuần.
 export function subscribeBossLeaderboard(onData: (attempts: BossAttempt[]) => void): Unsubscribe {
   const bossQuery = query(collection(db, 'boss_attempts'), orderBy('score', 'desc'), limit(5));
   return onSnapshot(bossQuery, (snapshot) => {
@@ -190,7 +257,6 @@ export function subscribeBossLeaderboard(onData: (attempts: BossAttempt[]) => vo
   });
 }
 
-// Lưu điểm đấu trường PvP nhanh (ai đạt điểm cao lên top).
 export async function submitPvpScore(userId: string, userName: string, score: number) {
   await addDoc(collection(db, 'pvp_scores'), {
     userId,
@@ -200,7 +266,6 @@ export async function submitPvpScore(userId: string, userName: string, score: nu
   });
 }
 
-// Lắng nghe bảng xếp hạng PvP.
 export function subscribePvpLeaderboard(onData: (scores: PvpScore[]) => void): Unsubscribe {
   const pvpQuery = query(collection(db, 'pvp_scores'), orderBy('score', 'desc'), limit(5));
   return onSnapshot(pvpQuery, (snapshot) => {
