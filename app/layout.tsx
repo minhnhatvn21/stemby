@@ -1,5 +1,11 @@
 import type { Metadata } from 'next';
+import { Be_Vietnam_Pro } from 'next/font/google';
 import './globals.css';
+
+const vietnameseFont = Be_Vietnam_Pro({
+  subsets: ['latin', 'vietnamese'],
+  variable: '--font-body'
+});
 
 export const metadata: Metadata = {
   title: 'Arena Năng Lượng Xanh',
@@ -13,7 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi">
-      <body>{children}</body>
+      <body className={vietnameseFont.variable}>{children}</body>
     </html>
   );
 }

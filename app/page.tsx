@@ -5,6 +5,7 @@ import { addEnergyPoint, createUserProfile, submitIdea, subscribeLeaderboard, ty
 
 type KnowledgeCard = { id: number; text: string; icon: string };
 type ChallengeCard = { id: number; question: string; answer: string[]; correct: string };
+type Mission = { id: number; title: string; reward: number; note: string };
 
 const avatars = ['🦸', '🌱', '⚡', '🌍', '💧', '☀️'];
 
@@ -30,6 +31,19 @@ const challengeCards: ChallengeCard[] = [
   }
 ];
 
+const missions: Mission[] = [
+  { id: 1, title: 'Tắt 3 thiết bị điện không cần thiết', reward: 15, note: 'Nhiệm vụ tiết kiệm điện' },
+  { id: 2, title: 'Mang bình nước cá nhân đi học', reward: 15, note: 'Nhiệm vụ giảm rác nhựa' },
+  { id: 3, title: 'Ghi lại 1 ý tưởng xanh mới', reward: 20, note: 'Nhiệm vụ sáng tạo STEM' }
+];
+
+const growthMilestones = [
+  { min: 0, rank: 'Mầm Lửa', color: 'text-orange-200' },
+  { min: 50, rank: 'Chiến Binh Xanh', color: 'text-yellow-300' },
+  { min: 120, rank: 'Thủ Lĩnh Năng Lượng', color: 'text-amber-300' },
+  { min: 220, rank: 'Huyền Thoại Plasma', color: 'text-cyan-300' }
+];
+
 export default function HomePage() {
   const [nickname, setNickname] = useState('');
   const [avatar, setAvatar] = useState(avatars[0]);
@@ -42,20 +56,34 @@ export default function HomePage() {
   const [thanCay, setThanCay] = useState('');
   const [tanCay, setTanCay] = useState('');
 
+  const [missionStatus, setMissionStatus] = useState<Record<number, boolean>>({});
+
   const currentKnowledge = useMemo(() => knowledgeCards[knowledgeIndex], [knowledgeIndex]);
   const challenge = challengeCards[knowledgeIndex % challengeCards.length];
+
+  const growth = useMemo(() => {
+    const current = [...growthMilestones].reverse().find((item) => energy >= item.min) ?? growthMilestones[0];
+    const next = growthMilestones.find((item) => item.min > energy);
+    const progress = next ? Math.min(100, Math.round((energy / next.min) * 100)) : 100;
+    return { current, next, progress };
+  }, [energy]);
 
   useEffect(() => {
     const savedId = localStorage.getItem('arena_user_id');
     const savedName = localStorage.getItem('arena_nickname');
     const savedAvatar = localStorage.getItem('arena_avatar');
     const savedEnergy = Number(localStorage.getItem('arena_energy') ?? '0');
+    const savedMissions = localStorage.getItem('arena_missions');
 
     if (savedId && savedName && savedAvatar) {
       setUserId(savedId);
       setNickname(savedName);
       setAvatar(savedAvatar);
       setEnergy(savedEnergy);
+    }
+
+    if (savedMissions) {
+      setMissionStatus(JSON.parse(savedMissions) as Record<number, boolean>);
     }
   }, []);
 
@@ -85,14 +113,18 @@ export default function HomePage() {
     localStorage.setItem('arena_energy', '0');
   };
 
-  const onReadDone = async () => {
+  const updateEnergy = async (value: number) => {
     if (!userId) return;
-    await addEnergyPoint(userId, 10);
-    const next = energy + 10;
+    await addEnergyPoint(userId, value);
+    const next = energy + value;
     setEnergy(next);
     localStorage.setItem('arena_energy', String(next));
-    setKnowledgeIndex((prev) => (prev + 1) % knowledgeCards.length);
     celebrate();
+  };
+
+  const onReadDone = async () => {
+    await updateEnergy(10);
+    setKnowledgeIndex((prev) => (prev + 1) % knowledgeCards.length);
   };
 
   const onChallengeAnswer = async (answer: string) => {
@@ -102,11 +134,7 @@ export default function HomePage() {
       return;
     }
     if (answer === challenge.correct) {
-      await addEnergyPoint(userId, 20);
-      const next = energy + 20;
-      setEnergy(next);
-      localStorage.setItem('arena_energy', String(next));
-      celebrate();
+      await updateEnergy(20);
     } else {
       alert('Chưa đúng rồi, thử lại nhé!');
     }
@@ -116,14 +144,23 @@ export default function HomePage() {
     if (!userId || !gocRe || !thanCay || !tanCay) return;
 
     await submitIdea({ userId, userName: nickname, gocRe, thanCay, tanCay });
-    await addEnergyPoint(userId, 50);
-    const next = energy + 50;
-    setEnergy(next);
-    localStorage.setItem('arena_energy', String(next));
+    await updateEnergy(50);
     setGocRe('');
     setThanCay('');
     setTanCay('');
-    celebrate();
+  };
+
+  const onCompleteMission = async (mission: Mission) => {
+    if (!userId) {
+      alert('Bạn hãy đăng nhập hồ sơ trước khi nhận nhiệm vụ nhé!');
+      return;
+    }
+    if (missionStatus[mission.id]) return;
+
+    const nextStatus = { ...missionStatus, [mission.id]: true };
+    setMissionStatus(nextStatus);
+    localStorage.setItem('arena_missions', JSON.stringify(nextStatus));
+    await updateEnergy(mission.reward);
   };
 
   return (
@@ -152,11 +189,28 @@ export default function HomePage() {
           <h1 className="molten-title text-3xl md:text-5xl">Arena Năng Lượng Xanh</h1>
           <nav className="flex gap-2 text-sm md:text-base">
             <button className="energy-button px-3 py-2">Nhiệm vụ</button>
-            <button className="energy-button px-3 py-2">Thử thách</button>
+            <button className="energy-button px-3 py-2">Mô hình tăng trưởng</button>
             <button className="energy-button px-3 py-2">Bảng xếp hạng</button>
           </nav>
         </div>
       </header>
+
+      <section className="module-grid mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {[
+          ['⚔️', 'Chiến Binh Arena', 'Đấu trường sinh tử'],
+          ['🛡️', 'Biệt Đội Arena', 'Hợp sức tác chiến'],
+          ['⚡', 'Nhanh Như Chớp', 'Tốc độ sấm sét'],
+          ['📘', 'Arena Thi Online', 'Khảo thí thi online'],
+          ['👥', 'Bảng Tương Tác', 'Kết nối thời gian thực'],
+          ['📤', 'Cổng Nộp Bài', 'Dành cho học sinh']
+        ].map((module) => (
+          <article key={module[1]} className="module-tile rounded-2xl p-7 text-center">
+            <div className="module-icon mx-auto mb-4 grid h-12 w-12 place-items-center">{module[0]}</div>
+            <h3 className="font-heading text-3xl font-extrabold uppercase tracking-wide text-slate-100 md:text-4xl">{module[1]}</h3>
+            <p className="mt-1 text-xs uppercase tracking-[0.25em] text-cyan-300">{module[2]}</p>
+          </article>
+        ))}
+      </section>
 
       <section className="fire-shell mb-6 rounded-xl px-5 py-7 text-center md:py-10">
         <p className="mb-2 text-xs uppercase tracking-[0.25em] text-yellow-300">Boss Fight Theme</p>
@@ -205,11 +259,54 @@ export default function HomePage() {
             <p className="mt-1 text-2xl font-black text-yellow-300">⚡ {energy}</p>
           </div>
           <div className="fire-card rounded-lg p-4">
-            <p className="text-xs uppercase text-orange-200">Mục tiêu hôm nay</p>
-            <p className="mt-1 font-black text-yellow-200">Bứt phá vào Top 5 và giữ Trái Đất xanh!</p>
+            <p className="text-xs uppercase text-orange-200">Cấp bậc hiện tại</p>
+            <p className={`mt-1 text-xl font-black ${growth.current.color}`}>{growth.current.rank}</p>
           </div>
         </section>
       )}
+
+      <section className="mb-6 grid gap-4 lg:grid-cols-2">
+        <article className="fire-card rounded-lg p-5">
+          <h3 className="text-xl font-black text-yellow-300">🎯 Module Nhiệm Vụ Hằng Ngày</h3>
+          <p className="mt-2 text-sm text-orange-100">Hoàn thành nhiệm vụ để mở khoá thêm điểm năng lượng mỗi ngày.</p>
+          <div className="mt-4 space-y-3">
+            {missions.map((mission) => (
+              <button
+                key={mission.id}
+                onClick={() => onCompleteMission(mission)}
+                className="mission-row flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left"
+              >
+                <div>
+                  <p className="font-semibold text-yellow-100">{mission.title}</p>
+                  <p className="text-xs text-orange-200">{mission.note}</p>
+                </div>
+                <strong className="text-sm text-yellow-300">{missionStatus[mission.id] ? 'Đã xong ✅' : `+${mission.reward}`}</strong>
+              </button>
+            ))}
+          </div>
+        </article>
+
+        <article className="fire-card rounded-lg p-5">
+          <h3 className="text-xl font-black text-yellow-300">📈 Module Mô Hình Tăng Trưởng</h3>
+          <p className="mt-2 text-sm text-orange-100">Mỗi điểm năng lượng là một bước tiến trên hành trình trở thành thủ lĩnh xanh.</p>
+          <div className="mt-4 rounded-md border border-orange-500/40 bg-black/40 p-3">
+            <div className="mb-2 flex items-center justify-between text-xs uppercase text-orange-200">
+              <span>{growth.current.rank}</span>
+              <span>{growth.next ? `Tiếp theo: ${growth.next.rank} (${growth.next.min}đ)` : 'Đã đạt cấp tối đa'}</span>
+            </div>
+            <div className="h-3 overflow-hidden rounded-full bg-slate-800">
+              <div className="growth-bar h-full" style={{ width: `${growth.progress}%` }} />
+            </div>
+          </div>
+          <ul className="mt-4 grid gap-2 text-sm text-orange-100 md:grid-cols-2">
+            {growthMilestones.map((item) => (
+              <li key={item.rank} className="rounded border border-orange-500/20 bg-black/20 px-2 py-1">
+                <span className={`font-bold ${item.color}`}>{item.rank}</span> - mốc {item.min} điểm
+              </li>
+            ))}
+          </ul>
+        </article>
+      </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <article className="fire-card rounded-lg p-5">
