@@ -64,13 +64,13 @@ export default function HomePage() {
     return () => unsub();
   }, []);
 
-  // Hiệu ứng "ăn mừng" đơn giản bằng emoji bay.
+  // Hiệu ứng chúc mừng kiểu năng lượng bùng nổ.
   const celebrate = () => {
     const confetti = document.createElement('div');
-    confetti.className = 'fixed inset-0 pointer-events-none z-50 flex items-center justify-center text-4xl';
-    confetti.innerText = '🎉 🎈 ✨';
+    confetti.className = 'fixed inset-0 pointer-events-none z-50 flex items-center justify-center text-5xl';
+    confetti.innerText = '🔥 ⚡ ✨';
     document.body.appendChild(confetti);
-    setTimeout(() => confetti.remove(), 1200);
+    setTimeout(() => confetti.remove(), 1000);
   };
 
   const registerPlayer = async () => {
@@ -127,111 +127,146 @@ export default function HomePage() {
   };
 
   return (
-    <main className="mx-auto max-w-6xl p-4 md:p-8">
-      <header className="mb-6 rounded-3xl bg-white/70 p-6 shadow-xl backdrop-blur">
-        <h1 className="text-3xl font-black text-energy.ocean md:text-4xl">🌍 Arena Năng Lượng Xanh</h1>
-        <p className="mt-2 text-lg">Chào mừng chiến binh STEM! Hãy học, chơi và cứu Trái Đất xanh hơn mỗi ngày.</p>
+    <main className="relative mx-auto min-h-screen max-w-7xl px-4 pb-10 pt-6 md:px-8">
+      <div className="fire-background" aria-hidden>
+        <div className="fire-wave" />
+        <div className="fire-wave second" />
+        {Array.from({ length: 14 }).map((_, index) => (
+          <span
+            key={`ember-${index}`}
+            className="ember"
+            style={{
+              width: `${4 + ((index * 3) % 6)}px`,
+              height: `${4 + ((index * 3) % 6)}px`,
+              left: `${(index * 7) % 100}%`,
+              bottom: `-${(index * 10) % 25}px`,
+              animationDuration: `${5 + (index % 5)}s`,
+              animationDelay: `${index * 0.4}s`
+            }}
+          />
+        ))}
+      </div>
+
+      <header className="fire-shell mb-6 rounded-xl px-4 py-4 md:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="molten-title text-3xl md:text-5xl">Arena Năng Lượng Xanh</h1>
+          <nav className="flex gap-2 text-sm md:text-base">
+            <button className="energy-button px-3 py-2">Nhiệm vụ</button>
+            <button className="energy-button px-3 py-2">Thử thách</button>
+            <button className="energy-button px-3 py-2">Bảng xếp hạng</button>
+          </nav>
+        </div>
       </header>
 
+      <section className="fire-shell mb-6 rounded-xl px-5 py-7 text-center md:py-10">
+        <p className="mb-2 text-xs uppercase tracking-[0.25em] text-yellow-300">Boss Fight Theme</p>
+        <h2 className="molten-title text-4xl md:text-6xl">Kích hoạt chế độ chiến binh</h2>
+        <p className="flicker mx-auto mt-3 max-w-3xl text-base text-orange-100 md:text-lg">
+          Học kiến thức xanh, vượt thử thách sinh tồn và vươn lên top 5 với nguồn năng lượng plasma rực cháy.
+        </p>
+        <div className="mt-5">
+          <button className="energy-button px-6 py-3 text-lg">Nạp năng lượng ngay</button>
+        </div>
+      </section>
+
       {!userId ? (
-        <section className="mb-8 rounded-3xl bg-white p-6 shadow-lg">
-          <h2 className="text-2xl font-bold">1) Đăng nhập hồ sơ</h2>
+        <section className="fire-card mb-6 rounded-lg p-5 md:p-6">
+          <h2 className="text-2xl font-black text-yellow-300">1) Khởi tạo hồ sơ Chiến Binh</h2>
+          <p className="mt-1 text-sm text-orange-100">Nhập tên và chọn avatar để tạo tài khoản trong Firestore.</p>
           <div className="mt-4 flex flex-col gap-3 md:flex-row">
             <input
-              className="rounded-xl border p-3 md:flex-1"
+              className="fire-input p-3 md:flex-1"
               placeholder="Nhập Tên Chiến Binh"
               value={nickname}
               onChange={(event) => setNickname(event.target.value)}
             />
-            <select
-              className="rounded-xl border p-3"
-              value={avatar}
-              onChange={(event) => setAvatar(event.target.value)}
-            >
+            <select className="fire-input p-3" value={avatar} onChange={(event) => setAvatar(event.target.value)}>
               {avatars.map((item) => (
                 <option key={item} value={item}>
                   {item}
                 </option>
               ))}
             </select>
-            <button onClick={registerPlayer} className="rounded-xl bg-energy.leaf px-5 py-3 font-bold text-white">
-              Vào Arena
+            <button onClick={registerPlayer} className="energy-button px-5 py-3">
+              Vào đấu trường
             </button>
           </div>
         </section>
       ) : (
-        <section className="mb-8 grid gap-4 rounded-3xl bg-white p-6 shadow-lg md:grid-cols-3">
-          <div className="rounded-2xl bg-sky-100 p-4">
-            <p className="text-sm">Chiến binh</p>
-            <p className="text-2xl font-bold">{avatar} {nickname}</p>
+        <section className="fire-shell mb-6 grid gap-4 rounded-xl p-4 md:grid-cols-3">
+          <div className="fire-card rounded-lg p-4">
+            <p className="text-xs uppercase text-orange-200">Chiến binh</p>
+            <p className="mt-1 text-2xl font-black text-yellow-300">
+              {avatar} {nickname}
+            </p>
           </div>
-          <div className="rounded-2xl bg-lime-100 p-4">
-            <p className="text-sm">Điểm năng lượng</p>
-            <p className="text-2xl font-black">⚡ {energy}</p>
+          <div className="fire-card rounded-lg p-4">
+            <p className="text-xs uppercase text-orange-200">Điểm năng lượng</p>
+            <p className="mt-1 text-2xl font-black text-yellow-300">⚡ {energy}</p>
           </div>
-          <div className="rounded-2xl bg-yellow-100 p-4">
-            <p className="text-sm">Mục tiêu hôm nay</p>
-            <p className="font-bold">Lên Top 5 bảo vệ môi trường!</p>
+          <div className="fire-card rounded-lg p-4">
+            <p className="text-xs uppercase text-orange-200">Mục tiêu hôm nay</p>
+            <p className="mt-1 font-black text-yellow-200">Bứt phá vào Top 5 và giữ Trái Đất xanh!</p>
           </div>
         </section>
       )}
 
-      <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-        <article className="rounded-3xl bg-white p-5 shadow-lg">
-          <h3 className="text-xl font-bold">📘 Thẻ 1: Trạm Luyện Tập</h3>
-          <p className="mt-3 text-lg">{currentKnowledge.icon} {currentKnowledge.text}</p>
-          <button onClick={onReadDone} className="mt-4 w-full rounded-xl bg-energy.ocean p-3 font-bold text-white">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <article className="fire-card rounded-lg p-5">
+          <h3 className="text-xl font-black text-yellow-300">📘 Thẻ 1: Trạm Luyện Tập</h3>
+          <p className="mt-2 text-orange-100">
+            {currentKnowledge.icon} {currentKnowledge.text}
+          </p>
+          <button onClick={onReadDone} className="energy-button mt-4 w-full p-3">
             Đã hiểu (+10 điểm)
           </button>
         </article>
 
-        <article className="rounded-3xl bg-white p-5 shadow-lg">
-          <h3 className="text-xl font-bold">🧠 Thẻ 2: Đấu Trường Sinh Tồn</h3>
-          <p className="mt-3">{challenge.question}</p>
+        <article className="fire-card rounded-lg p-5">
+          <h3 className="text-xl font-black text-yellow-300">🧠 Thẻ 2: Đấu Trường Sinh Tồn</h3>
+          <p className="mt-2 text-orange-100">{challenge.question}</p>
           <div className="mt-3 space-y-2">
             {challenge.answer.map((answer) => (
-              <button
-                key={answer}
-                onClick={() => onChallengeAnswer(answer)}
-                className="w-full rounded-xl border p-2 text-left hover:shadow-glow"
-              >
+              <button key={answer} onClick={() => onChallengeAnswer(answer)} className="energy-button w-full p-2 text-left">
                 {answer}
               </button>
             ))}
           </div>
         </article>
 
-        <article className="rounded-3xl bg-white p-5 shadow-lg">
-          <h3 className="text-xl font-bold">🌳 Thẻ 3: Xưởng Sáng Chế</h3>
+        <article className="fire-card rounded-lg p-5">
+          <h3 className="text-xl font-black text-yellow-300">🌳 Thẻ 3: Xưởng Sáng Chế</h3>
           <input
-            className="mt-2 w-full rounded-xl border p-2"
+            className="fire-input mt-2 w-full p-2"
             placeholder="Gốc rễ (Vấn đề)"
             value={gocRe}
             onChange={(event) => setGocRe(event.target.value)}
           />
           <input
-            className="mt-2 w-full rounded-xl border p-2"
+            className="fire-input mt-2 w-full p-2"
             placeholder="Thân cây (Nguyên nhân)"
             value={thanCay}
             onChange={(event) => setThanCay(event.target.value)}
           />
           <input
-            className="mt-2 w-full rounded-xl border p-2"
+            className="fire-input mt-2 w-full p-2"
             placeholder="Tán cây (Giải pháp)"
             value={tanCay}
             onChange={(event) => setTanCay(event.target.value)}
           />
-          <button onClick={onSubmitIdea} className="mt-3 w-full rounded-xl bg-energy.sun p-3 font-bold">
+          <button onClick={onSubmitIdea} className="energy-button mt-3 w-full p-3">
             Gửi ý tưởng (+50 điểm)
           </button>
         </article>
 
-        <article className="rounded-3xl bg-white p-5 shadow-lg">
-          <h3 className="text-xl font-bold">🏆 Thẻ 4: Bảng Tương Tác</h3>
+        <article className="fire-card rounded-lg p-5">
+          <h3 className="text-xl font-black text-yellow-300">🏆 Thẻ 4: Bảng Tương Tác</h3>
           <ol className="mt-3 space-y-2">
             {leaderboard.slice(0, 5).map((user, index) => (
-              <li key={user.id} className="flex items-center justify-between rounded-xl bg-slate-50 p-2">
-                <span>{index + 1}. {user.avatar} {user.nickname}</span>
+              <li key={user.id} className="fire-input flex items-center justify-between p-2">
+                <span>
+                  {index + 1}. {user.avatar} {user.nickname}
+                </span>
                 <strong>⚡ {user.diem_nang_luong}</strong>
               </li>
             ))}

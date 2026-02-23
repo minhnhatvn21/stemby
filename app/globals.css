@@ -2,9 +2,192 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --fire-red: #ff2a2a;
+  --fire-orange: #ff7a00;
+  --fire-yellow: #ffc400;
+  --coal-black: #0a0a0a;
+  --smoke-gray: #2a2a2a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
-  background: linear-gradient(160deg, #e0f2fe, #dcfce7 45%, #fef9c3);
-  color: #0f172a;
+  color: #fff7cf;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 122, 0, 0.2), transparent 40%),
+    radial-gradient(circle at 80% 10%, rgba(255, 42, 42, 0.3), transparent 45%),
+    radial-gradient(circle at 50% 100%, rgba(255, 196, 0, 0.15), transparent 40%),
+    var(--coal-black);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.fire-background {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+}
+
+.fire-wave {
+  position: absolute;
+  width: 160%;
+  height: 55%;
+  left: -30%;
+  bottom: -18%;
+  filter: blur(35px);
+  opacity: 0.55;
+  animation: drift 9s ease-in-out infinite alternate;
+  background: linear-gradient(135deg, var(--fire-red), var(--fire-orange), var(--fire-yellow));
+}
+
+.fire-wave.second {
+  bottom: -26%;
+  opacity: 0.35;
+  animation-duration: 12s;
+  animation-direction: alternate-reverse;
+}
+
+.ember {
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(255, 205, 112, 0.9);
+  box-shadow: 0 0 12px rgba(255, 122, 0, 0.8);
+  animation: rise linear infinite;
+}
+
+.fire-shell {
+  background: rgba(10, 10, 10, 0.68);
+  border: 1px solid rgba(255, 80, 0, 0.45);
+  box-shadow:
+    0 0 0 1px rgba(255, 196, 0, 0.2) inset,
+    0 0 30px rgba(255, 42, 42, 0.3);
+  backdrop-filter: blur(8px);
+}
+
+.molten-title {
+  font-family: Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #fff7cf 0%, #ffc400 45%, #ff7a00 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 18px rgba(255, 122, 0, 0.5);
+}
+
+.flicker {
+  animation: flicker 2.2s infinite;
+}
+
+.fire-card {
+  border: 1px solid rgba(255, 122, 0, 0.45);
+  background: linear-gradient(160deg, rgba(42, 42, 42, 0.9), rgba(20, 20, 20, 0.95));
+  box-shadow: 0 10px 26px rgba(255, 122, 0, 0.22);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.fire-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 196, 0, 0.75);
+  box-shadow: 0 0 25px rgba(255, 122, 0, 0.5);
+}
+
+.energy-button {
+  border-radius: 4px;
+  border: 1px solid rgba(255, 196, 0, 0.7);
+  background: linear-gradient(135deg, var(--fire-red), var(--fire-orange), var(--fire-yellow));
+  color: #1f1300;
+  font-weight: 800;
+  box-shadow: 0 0 15px rgba(255, 122, 0, 0.45);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.energy-button:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 0 24px rgba(255, 196, 0, 0.6);
+  animation: rumble 0.22s linear;
+}
+
+.energy-button:active {
+  transform: scale(0.98);
+}
+
+.fire-input {
+  border-radius: 4px;
+  border: 1px solid rgba(255, 122, 0, 0.5);
+  background: rgba(16, 16, 16, 0.8);
+  color: #fff7cf;
+}
+
+.fire-input:focus {
+  outline: none;
+  border-color: #ffc400;
+  box-shadow: 0 0 0 2px rgba(255, 196, 0, 0.25);
+}
+
+@keyframes drift {
+  from {
+    transform: translateX(-2%) translateY(0) scale(1);
+  }
+  to {
+    transform: translateX(3%) translateY(-2%) scale(1.06);
+  }
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(10vh) scale(0.7);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-110vh) scale(1.2);
+    opacity: 0;
+  }
+}
+
+@keyframes flicker {
+  0%,
+  18%,
+  22%,
+  25%,
+  53%,
+  57%,
+  100% {
+    opacity: 1;
+  }
+  20%,
+  24%,
+  55% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes rumble {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-1px);
+  }
+  50% {
+    transform: translateX(1px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .fire-wave {
+    filter: blur(24px);
+    opacity: 0.35;
+  }
 }
